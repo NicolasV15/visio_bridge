@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "visio-bridge"
+version = "0.1.0"
+description = "Python library for reading and modifying Visio files (.vsdx / .vstx / .vssx)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["visio", "vsdx", "vstx", "vssx", "xml", "ooxml"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []  # pure stdlib — no third-party requirements
+
+[project.optional-dependencies]
+desktop = ["pywin32"]  # Windows COM automation (optional, Windows only)
+
+[project.scripts]
+visio-bridge-setup = "visio_bridge.src.core.setup_cli:main"
+
+[project.urls]
+Repository = "https://github.com/NicolasV15/visio_bridge"
+
+# The repo root IS the package directory (visio_bridge/).
+# Install from the parent folder: pip install -e path/to/parent/
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["visio_bridge*"]
+exclude = ["visio_bridge.tests*"]
