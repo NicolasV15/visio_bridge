@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "visio-bridge"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python library for reading and modifying Visio files (.vsdx / .vstx / .vssx)"
 readme = "README.md"
 requires-python = ">=3.10"

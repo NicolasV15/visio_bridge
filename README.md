@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.1.1-blue)
 ![Dependencies](https://img.shields.io/badge/dependencies-zero_(stdlib_only)-brightgreen)
 
 ---
@@ -32,11 +32,13 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/NicolasV15/visio_bridge.git
+git clone --branch v0.1.1 https://github.com/NicolasV15/visio_bridge.git
 
 # Install in editable mode from the parent directory
 pip install -e ./visio_bridge
 ```
+
+Replace `v0.1.1` with the release tag you want to install.
 
 > **Note**: The core library has **zero third-party dependencies** — it uses only Python standard library modules.
 
@@ -157,6 +159,32 @@ For granular tasks where you call an LLM programmatically to edit shapes or docu
 | Shape instance manager | [`skills/visio-instance-manager/SKILL.md`](skills/visio-instance-manager/SKILL.md) | `apply_instance_commands()` |
 | Visio desktop session manager | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
 | Design rule auditor | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
+
+### Codex Skill Release And Update
+
+The `skills/` directory is the publish source for Codex skills. Release a new
+version with a Git tag such as `v0.1.1` or `v0.2.0`, then install that tagged
+snapshot into Codex.
+Keep the version in `pyproject.toml` aligned with the Git tag you publish.
+
+Install or refresh all bundled skills from a release tag:
+
+```bash
+python scripts/update_codex_skills.py --ref v0.1.1
+```
+
+Install only selected skills from a release tag:
+
+```bash
+python scripts/update_codex_skills.py --ref v0.1.1 --skills visio-file-inspector visio-symbol-editor
+```
+
+The helper removes any existing `~/.codex/skills/<skill-name>` copy before
+installing the new snapshot. If you prefer a manual upgrade path, reinstall the
+same `skills/<name>` path from GitHub with the tag you want, or remove the
+local skill directory and run the installer again.
+
+After any skill update, restart Codex to pick up the new skills.
 
 ---
 
@@ -353,7 +381,19 @@ Legacy binary formats (`.vsd`, `.vst`, `.vss`) are **not** supported.
 </details>
 
 <details>
-<summary><strong>How do I use the Visio Desktop backend on macOS?</strong></summary>
+<summary><strong>How do I use the Visio Desktop backend?</strong></summary>
+
+Use `backend="auto"` by default. Visio Bridge chooses the Desktop COM backend
+when the current environment can control Visio, otherwise it falls back to XML.
+
+**Windows Native**
+
+1. Install Microsoft Visio Desktop on Windows.
+2. Ensure the current Windows user can launch Visio.
+3. Ensure `python` is available in that Windows user environment.
+4. Install `pywin32`: `python -m pip install pywin32`.
+
+**macOS + Parallels**
 
 1. Install [Parallels Desktop](https://www.parallels.com/) with a Windows VM
 2. Install Python 3.12 and `pywin32` inside the Windows VM
@@ -361,7 +401,7 @@ Legacy binary formats (`.vsd`, `.vst`, `.vss`) are **not** supported.
 4. Use `backend="auto"` (default) — Visio Bridge will automatically detect `prlctl` and route commands through Parallels
 
 ```python
-# macOS: automatically uses Parallels → Windows → Visio COM
+# Windows Native or macOS + Parallels: prefer Visio COM, fall back to XML.
 apply_skill_commands(bridge, path, commands)  # backend="auto" by default
 ```
 </details>

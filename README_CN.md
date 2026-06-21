@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.1.1-blue)
 ![Dependencies](https://img.shields.io/badge/dependencies-zero_(stdlib_only)-brightgreen)
 
 ---
@@ -32,11 +32,13 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/NicolasV15/visio_bridge.git
+git clone --branch v0.1.1 https://github.com/NicolasV15/visio_bridge.git
 
 # 从父目录以可编辑模式安装
 pip install -e ./visio_bridge
 ```
+
+将 `v0.1.1` 替换为你要安装的发布 tag。
 
 > **注意**：核心库**零第三方依赖**——仅使用 Python 标准库模块。
 
@@ -157,6 +159,31 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 | 形状实例管理器 | [`skills/visio-instance-manager/SKILL.md`](skills/visio-instance-manager/SKILL.md) | `apply_instance_commands()` |
 | Visio 桌面端会话管理器 | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
 | 设计规则审计员 | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
+
+### Codex Skill 发布与更新
+
+`skills/` 目录是 Codex skills 的发布源。每次发布都用一个 Git tag
+固定版本，例如 `v0.1.1` 或 `v0.2.0`，然后把这个 tag 对应的快照装入
+Codex。
+请让 `pyproject.toml` 里的版本号与发布的 Git tag 保持一致。
+
+安装或刷新全部内置 skills：
+
+```bash
+python scripts/update_codex_skills.py --ref v0.1.1
+```
+
+只安装指定 skills：
+
+```bash
+python scripts/update_codex_skills.py --ref v0.1.1 --skills visio-file-inspector visio-symbol-editor
+```
+
+这个辅助脚本会先移除 `~/.codex/skills/<skill-name>` 的旧副本，再安装
+新的快照。若你更想手动升级，也可以用相同的 `skills/<name>` 路径和
+目标 tag 重新安装，或者先删除本地 skill 目录再重新安装。
+
+任何 skill 更新后都要重启 Codex，新的 skill 才会被加载。
 
 ---
 
@@ -353,7 +380,19 @@ Visio Bridge 支持所有现代 Open XML 格式的 Visio 文件：
 </details>
 
 <details>
-<summary><strong>在 macOS 上如何使用 Visio 桌面端后端？</strong></summary>
+<summary><strong>如何使用 Visio 桌面端后端？</strong></summary>
+
+默认使用 `backend="auto"`。当当前环境可以控制 Visio 时，Visio Bridge
+会选择桌面端 COM 后端；否则自动回退到 XML。
+
+**Windows Native**
+
+1. 在 Windows 上安装 Microsoft Visio Desktop
+2. 确保当前 Windows 用户可以启动 Visio
+3. 确保该 Windows 用户环境中可调用 `python`
+4. 安装 `pywin32`：`python -m pip install pywin32`
+
+**macOS + Parallels**
 
 1. 安装 [Parallels Desktop](https://www.parallels.com/) 并配置 Windows 虚拟机
 2. 在 Windows VM 中安装 Python 3.12 和 `pywin32`
@@ -361,7 +400,7 @@ Visio Bridge 支持所有现代 Open XML 格式的 Visio 文件：
 4. 使用 `backend="auto"`（默认值）—— Visio Bridge 会自动检测 `prlctl` 并通过 Parallels 路由命令
 
 ```python
-# macOS：自动使用 Parallels → Windows → Visio COM
+# Windows Native 或 macOS + Parallels：优先 Visio COM，不可用时回退 XML。
 apply_skill_commands(bridge, path, commands)  # backend="auto" 是默认值
 ```
 </details>
