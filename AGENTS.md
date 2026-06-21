@@ -16,7 +16,10 @@ Visio Bridge is a Python toolkit for reading and modifying Visio files (`.vsdx` 
 
 ```python
 import sys
-sys.path.insert(0, "/path/to/parent/of/visio_bridge")  # adjust to actual workspace root
+from pathlib import Path
+
+# When running from this repository root, import the package from its parent.
+sys.path.insert(0, str(Path.cwd().parent))
 
 from visio_bridge import (
     VisioBridge,
@@ -41,8 +44,8 @@ from visio_bridge import (
 Install (if not already):
 
 ```bash
-pip install -e ./visio_bridge            # core only (zero third-party deps)
-pip install -e "./visio_bridge[desktop]" # + Visio Desktop COM support (Windows/Parallels)
+pip install -e .            # core only, when your shell is at this repo root
+pip install -e ".[desktop]" # + Visio Desktop COM support (Windows/Parallels)
 ```
 
 ### 2.1 Workspace Configuration & Setup
@@ -69,16 +72,43 @@ This generates a `.visio_bridge.json` file in the current working directory:
 
 Agents should read `visio_bridge.json` or `.visio_bridge.json` if present to respect the user's customized default settings.
 
-### 2.2 Desktop Session Prerequisites (Windows / Parallels)
+### 2.2 Desktop Session Prerequisites
 
 Visio Desktop session control (`open_visio_file()`, `refresh_visio_file()`, etc.) has extra runtime prerequisites beyond the pure XML backend:
+
+#### Windows Native
+
+In Windows Native mode, Visio Bridge controls the locally installed Microsoft Visio process through Windows COM / `Visio.Application`.
+
+- Microsoft Visio Desktop must be installed on Windows.
+- The current Windows user must be able to launch Visio.
+- Windows Python must be callable as `python`.
+- `pywin32` must be installed so the runner can import `pythoncom` and `win32com.client`.
+
+Recommended checks from Windows PowerShell or Command Prompt:
+
+```bat
+python --version
+python -c "import pythoncom, win32com.client; print('pywin32 ok')"
+python -c "import win32com.client; app = win32com.client.Dispatch('Visio.Application'); print(app.Version); app.Quit()"
+```
+
+If `python --version` fails, install Python and ensure it is on the current user's `PATH`. If `import pythoncom` fails, install `pywin32`:
+
+```bat
+python -m pip install pywin32
+```
+
+#### macOS + Parallels
+
+In macOS + Parallels mode, the macOS side uses the Parallels transport to run a Python/COM runner inside the Windows guest. The guest runner controls Visio through `Visio.Application`.
 
 - The configured Parallels VM must be running.
 - The Windows guest must have a real Python interpreter callable as `python` (the Windows Store alias alone is not sufficient).
 - The Windows guest must have `pywin32` installed so the runner can import `pythoncom` and `win32com.client`.
 - Parallels shared folders must expose the macOS home directory to the guest as `\\Mac\Home`.
 
-Recommended verification commands:
+Recommended verification commands from macOS:
 
 ```bash
 prlctl list --all
@@ -112,14 +142,14 @@ Agents should run these checks when Desktop session control unexpectedly fails b
 
 Parse the user's instruction and route to the matching SKILL module. When the intent spans multiple modules, execute them **in the order listed below**.
 
-| User intent keywords | SKILL module | System prompt | Execute with |
-|---|---|---|---|
-| "读取" / "查看" / "诊断" / "列出" / inspect / read / diagnose / list | **file_inspector** | [`skills/file_inspector/SKILL.md`](skills/file_inspector/SKILL.md) | *(read-only, no apply)* |
-| "修改形状" / "改几何" / "改引脚" / "画" / edit shape / geometry / pin / draw | **symbol_editor** | [`skills/symbol_editor/SKILL.md`](skills/symbol_editor/SKILL.md) | `apply_skill_commands()` |
-| "改页面" / "改文档" / "比例" / "页宽" / page size / scale / document settings | **doc_page_settings** | [`skills/doc_page_settings/SKILL.md`](skills/doc_page_settings/SKILL.md) | `apply_settings_commands()` |
-| "添加形状" / "复制" / "删除形状" / add shape / copy shape / drop / delete instance | **instance_manager** | [`skills/instance_manager/SKILL.md`](skills/instance_manager/SKILL.md) | `apply_instance_commands()` |
-| "会话" / "打开" / "关闭" / "刷新" / reload / session / open in Visio / close in Visio | **visio_session_manager** | [`skills/visio_session_manager/SKILL.md`](skills/visio_session_manager/SKILL.md) | `list_visio_documents()` / `open_visio_file()` / `close_visio_file()` / `refresh_visio_file()` |
-| "审计" / "检查规范" / "自动修复" / audit / design check / compliance / fix violations | **design_rules** | [`skills/design_rules/SKILL.md`](skills/design_rules/SKILL.md) | `plan_design_commands()` → then `apply_*` |
+| User intent keywords | Agent skill | Code executor/API |
+|---|---|---|
+| "读取" / "查看" / "诊断" / "列出" / inspect / read / diagnose / list | [`visio-file-inspector`](skills/visio-file-inspector/SKILL.md) | read-only, no apply |
+| "修改形状" / "改几何" / "改引脚" / "画" / edit shape / geometry / pin / draw | [`visio-symbol-editor`](skills/visio-symbol-editor/SKILL.md) | `symbol_editor` via `apply_skill_commands()` |
+| "改页面" / "改文档" / "比例" / "页宽" / page size / scale / document settings | [`visio-doc-page-settings`](skills/visio-doc-page-settings/SKILL.md) | `doc_page_settings` via `apply_settings_commands()` |
+| "添加形状" / "复制" / "删除形状" / add shape / copy shape / drop / delete instance | [`visio-instance-manager`](skills/visio-instance-manager/SKILL.md) | `instance_manager` via `apply_instance_commands()` |
+| "会话" / "打开" / "关闭" / "刷新" / reload / session / open in Visio / close in Visio | [`visio-session-manager`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `open_visio_file()` / `close_visio_file()` / `refresh_visio_file()` |
+| "审计" / "检查规范" / "自动修复" / audit / design check / compliance / fix violations | [`visio-design-rules`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` then `apply_*` |
 
 ---
 
@@ -166,254 +196,57 @@ Feed `skill_data` or `settings` to the matching SKILL agent (or reason about it 
 
 ```python
 # symbol_editor
-apply_skill_commands(bridge, "masters/NMOS4/shape/5", commands, backend="xml")
+apply_skill_commands(bridge, "masters/NMOS4/shape/5", commands)
 
 # doc_page_settings
-apply_settings_commands(bridge, commands, backend="xml")
+apply_settings_commands(bridge, commands)
 
 # instance_manager
-apply_instance_commands(bridge, commands, backend="xml")
+apply_instance_commands(bridge, commands)
 
 bridge.save("path/to/output.vstx")
 ```
 
 ---
 
-## 5. Module-by-Module Reference
+## 5. Source Of Truth
 
-### 5.1 `file_inspector` — Read-Only Inspection
+Keep this file as a router and safety policy. Do not duplicate full command
+schemas here.
 
-**Use when:** the user wants to understand file structure before editing, or only needs a report.
-
-```python
-bridge  = VisioBridge("file.vstx")
-locator = ElementLocator(bridge)
-
-# --- Inspect structure ---
-bridge.parts_manifest()                         # full topology JSON
-locator.find("masters/Cap/shape/5")             # master shape element
-locator.find("pages/Page-1/shape/70")           # page instance element
-locator.find("document/sheet")                  # DocumentSheet
-locator.find("theme/0")                         # DrawingML theme
-locator.find("windows")                         # window state
-locator.find("doc_props/core")                  # Dublin Core metadata
-locator.find("doc_props/custom")                # custom properties
-```
-
-**Locator path cheat sheet:**
-
-| Path pattern | What it resolves to |
+| Knowledge | Source |
 |---|---|
-| `masters/<NameU>` | Master root element |
-| `masters/<NameU>/shape/<ID>` | Shape element inside a master |
-| `masters/<NameU>/shape/<ID>/cell/<CellName>` | Single Cell inside a shape |
-| `masters/<NameU>/shape/<ID>/section/<Name>` | Section element |
-| `pages/<NameU_or_ID>` | Page root element |
-| `pages/<NameU_or_ID>/shape/<ID>` | Shape element on a page |
-| `document` | Document root |
-| `document/sheet` | DocumentSheet (global User cells) |
-| `theme/0` | DrawingML theme root |
-| `windows` | Windows root |
-| `doc_props/core` | Dublin Core metadata |
-| `doc_props/app` | App-level metadata |
-| `doc_props/custom` | Custom properties |
+| User intent routing and global safety rules | `AGENTS.md` |
+| Skill-specific workflow and command JSON schema | `skills/visio-*/SKILL.md` |
+| Actual execution behavior | `src/skill/*.py`, `src/design/*.py`, `src/desktop/*.py` |
+| Human-facing usage docs | `README.md`, `README_CN.md`, `docs/` |
 
-**Output rules:** produce a human-readable summary + a `json` code block with the raw data. Never call `apply_*` or `bridge.save()` in read-only mode.
+If a skill document and code disagree, inspect the code before editing docs or
+generating commands. Keep executor keys unchanged: `symbol_editor`,
+`doc_page_settings`, and `instance_manager`.
 
 ---
 
-### 5.2 `symbol_editor` — Shape Geometry & Pins
+## 6. Skill Contracts
 
-**Use when:** editing a master shape's geometry, connection pins, transforms, text, or user-defined cells.
+Use this section to confirm the right capability, then load the matching skill
+for details.
 
-**Full action list:**
-
-| Action | Required fields | Notes |
+| Skill | Contract | Primary API |
 |---|---|---|
-| `update_transform` | `property`, `formula` | Properties: `Width`, `Height`, `PinX`, `PinY`, `LocPinX`, `LocPinY`, `Angle`, `FlipX`, `FlipY` |
-| `recalculate_formula_cache` | `target`, `scope` | `scope`: `"master"` or `"instance"`. Use only for explicit/debug recalculation; normal writes auto-flush |
-| `add_connection_pin` | `id`, `x`, `y`, `dir_x`, `dir_y` | Coordinates support formula strings |
-| `delete_connection_pin` | `id` | |
-| `draw_rectangle` | `x_min`, `y_min`, `x_max`, `y_max` | Closed filled rectangle |
-| `draw_line` | `x1`, `y1`, `x2`, `y2` | Open line segment |
-| `draw_circle` | `cx`, `cy`, `r` | Defaults: inscribed in shape |
-| `draw_ellipse` | `x_min`, `y_min`, `x_max`, `y_max` | Closed filled ellipse |
-| `draw_elliptical_arc` | `x_min`, `y_min`, `x_max`, `y_max`, `start_angle`, `sweep_angle` | `sweep_angle >= 360` → closed filled ellipse |
-| `modify_geometry` | `geom_ix`, `row_ix`, `x`, `y` | Modifies existing geometry row |
-| `update_text` | `text` | Replaces shape text label |
-| `update_shape_user_cell` | `name`, `value` or `formula` | Optional `unit` |
-| `delete_shape_user_cell` | `name` | |
+| [`visio-file-inspector`](skills/visio-file-inspector/SKILL.md) | Read structure, shapes, settings, themes, windows, or doc props. No writes. | `parts_manifest()`, `ElementLocator`, `to_skill()`, `to_settings_skill()` |
+| [`visio-symbol-editor`](skills/visio-symbol-editor/SKILL.md) | Edit shape transforms, geometry, pins, text, style cells, section cells, or shape User cells. | `apply_skill_commands()` |
+| [`visio-doc-page-settings`](skills/visio-doc-page-settings/SKILL.md) | Edit DocumentSheet User cells and PageSheet cells/User cells. | `to_settings_skill()`, `apply_settings_commands()` |
+| [`visio-instance-manager`](skills/visio-instance-manager/SKILL.md) | Add, copy, or delete shape instances on pages or inside groups. | `apply_instance_commands()` |
+| [`visio-design-rules`](skills/visio-design-rules/SKILL.md) | Audit a design profile, plan fix groups, then apply selected groups. | `audit_design()`, `plan_design_commands()` |
+| [`visio-session-manager`](skills/visio-session-manager/SKILL.md) | List, find, open, close, or refresh documents in Visio Desktop. Does not apply edit commands. | `list_visio_documents()`, `find_visio_document()`, `open_visio_file()`, `close_visio_file()`, `refresh_visio_file()` |
 
-**Execution:**
-
-```python
-shape_path = "masters/NMOS4/shape/5"  # or "pages/Page-1/shape/70" for instances
-apply_skill_commands(bridge, shape_path, commands, backend="xml")
-bridge.save("output.vstx")
-```
-
-**Formula cache rules (do not override these unless explicitly asked):**
-- Writing to a master → dirty scope auto-set; flushed before `bridge.save()`.
-- Writing to a page instance → only that instance subtree is recalculated; inherited formulas that are tainted get `F="Inh"` cache written.
-- `recalculate: false` in a command defers the immediate flush but does NOT skip the pre-save flush.
+Load only the matching skill unless the user intent spans multiple capabilities.
+When multiple skills are needed, follow the dispatch table order.
 
 ---
 
-### 5.3 `doc_page_settings` — Document & Page Configuration
-
-**Use when:** changing page dimensions, drawing scale, or global/page-level `User.*` variables.
-
-**Full action list:**
-
-| Action | Required fields | Notes |
-|---|---|---|
-| `update_doc_user_cell` | `name`, `value` or `formula` | Optional `unit`. Global DocumentSheet User cells |
-| `delete_doc_user_cell` | `name` | |
-| `update_page_cell` | `page`, `property`, `value` or `formula` | `page` = page NameU (e.g. `"Page-1"`). Properties: `PageWidth`, `PageHeight`, `PageScale`, `DrawingScale`, `DrawingSizeType` |
-| `update_page_user_cell` | `page`, `name`, `value` or `formula` | Optional `unit` |
-| `delete_page_user_cell` | `page`, `name` | |
-
-**Common document User cells:**
-
-| Cell | Meaning |
-|---|---|
-| `User.Scale` | Global scale multiplier |
-| `User.M` | Grid unit size = `3mm × Scale` |
-| `User.LW` | Global line weight |
-
-**Execution:**
-
-```python
-settings = to_settings_skill(bridge)  # read current state first
-# ... plan commands ...
-apply_settings_commands(bridge, commands, backend="xml")
-bridge.save("output.vstx")
-```
-
----
-
-### 5.4 `instance_manager` — Shape Instance Lifecycle
-
-**Use when:** adding new component instances to a page, duplicating existing shapes, or removing shapes.
-
-**Full action list:**
-
-| Action | Required fields | Optional fields | Notes |
-|---|---|---|---|
-| `add_instance` | `parent`, `master`, `x`, `y` | `width`, `height`, `angle` | `parent` = locator path of page or group; `master` = NameU or ID |
-| `copy_instance` | `shape_path`, `x`, `y` | | Deep-clones the source shape with new unique IDs |
-| `delete_instance` | `shape_path` | | Recursively removes all descendants |
-
-**Example:**
-
-```json
-[
-    {
-        "action": "add_instance",
-        "parent": "pages/Page-1",
-        "master": "Res",
-        "x": "3.0 in",
-        "y": "4.0 in",
-        "width": "0.5 in",
-        "height": "0.25 in"
-    },
-    {
-        "action": "copy_instance",
-        "shape_path": "pages/Page-1/shape/42",
-        "x": "5.0 in",
-        "y": "4.0 in"
-    }
-]
-```
-
-**Execution:**
-
-```python
-results = apply_instance_commands(bridge, commands, backend="xml")
-# results is a list of dicts with "action", "status", "shape_path" for each command
-bridge.save("output.vsdx")
-```
-
----
-
-### 5.5 `design_rules` — Audit & Automated Fix Planning
-
-**Use when:** checking a Visio file against a style profile or planning bulk fixes.
-
-**Workflow:**
-
-```python
-# 1. Describe the profile (no file needed)
-print(render_design_profile_markdown(CIRCUIT_SCHEMATIC_PROFILE))
-
-# 2. Run read-only audit
-report = audit_design(bridge, CIRCUIT_SCHEMATIC_PROFILE)
-import json
-print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
-
-# 3. Plan fix commands (grouped by executor)
-command_groups = plan_design_commands(report)
-# command_groups = {
-#   "symbol_editor": [{"target": "masters/Cap/shape/5", "commands": [...]}],
-#   "doc_page_settings": [{"commands": [...]}],
-#   "instance_manager": [{"commands": [...]}],
-# }
-
-# 4. Apply fix groups selectively (confirm with user before applying)
-for group in command_groups.get("symbol_editor", []):
-    apply_skill_commands(bridge, group["target"], group["commands"], backend="xml")
-
-settings_cmds = [cmd for group in command_groups.get("doc_page_settings", []) for cmd in group["commands"]]
-apply_settings_commands(bridge, settings_cmds, backend="xml")
-
-instance_cmds = [cmd for group in command_groups.get("instance_manager", []) for cmd in group["commands"]]
-apply_instance_commands(bridge, instance_cmds, backend="xml")
-
-bridge.save("output_fixed.vstx")
-
-# 5. Re-audit to verify
-report2 = audit_design(bridge, CIRCUIT_SCHEMATIC_PROFILE)
-```
-
----
-
-### 5.6 `visio_session_manager` — Visio Desktop Session Control
-
-**Use when:** detecting currently open Visio documents, opening/closing files in Visio Desktop, or refreshing a file after Visio Bridge modified it on disk.
-
-```python
-from visio_bridge import (
-    list_visio_documents,
-    find_visio_document,
-    open_visio_file,
-    close_visio_file,
-    refresh_visio_file,
-)
-
-# List open documents in the user's current Visio instance.
-docs = list_visio_documents()
-
-# Open or activate a document.
-open_visio_file("circuit_modified.vsdx", visible=True, activate=True)
-
-# Safe close: refuses to close if Visio has unsaved UI changes.
-close_visio_file("circuit_modified.vsdx")
-
-# Refresh after a disk write. Default behavior discards unsaved Visio UI edits.
-refresh_visio_file("circuit_modified.vsdx")
-```
-
-**Important rules:**
-- Session management requires the Desktop COM transport; it is not available through the XML ZIP backend.
-- `refresh_visio_file()` is a close-and-reopen operation, not an in-place XML reload.
-- The default refresh policy is `discard_unsaved=True`, so unsaved edits made in the Visio UI are intentionally discarded to show the latest file on disk.
-- These helpers do not run shape/page/instance commands. Use the matching `apply_*` API first, save the file, then call `refresh_visio_file()` if the user has that file open in Visio.
-- After saving a modified file, use `find_visio_document(output_path)` when Desktop transport is available. If it is already open, ask the user whether to refresh it; if it is not open, ask whether to open it. Do not refresh/open silently unless explicitly requested.
-- On macOS + Parallels, the session runner opens files by mapping host paths below the macOS home directory to `\\Mac\Home\...` inside the Windows guest. If opening a file fails with "file not found", verify the mapped UNC path is accessible from the guest before changing the Visio command flow.
-
----
-
-## 6. Backend Selection
+## 7. Backend Selection
 
 All `apply_*` functions accept a `backend` keyword. Choose the right value:
 
@@ -427,7 +260,7 @@ All `apply_*` functions accept a `backend` keyword. Choose the right value:
 
 ---
 
-## 7. Output Path Rules
+## 8. Output Path Rules
 
 - **Default (no `output_path`):** modifications are buffered in memory; `bridge.save(path)` writes to disk.
 - **With `output_path`:** the `apply_*` function calls `bridge.save(output_path)` automatically.
@@ -435,7 +268,7 @@ All `apply_*` functions accept a `backend` keyword. Choose the right value:
 
 ```python
 # Safe pattern
-apply_skill_commands(bridge, shape_path, commands, backend="xml")
+apply_skill_commands(bridge, shape_path, commands)
 bridge.save("circuit_modified.vstx")   # new file, source untouched
 ```
 
@@ -453,7 +286,7 @@ Only call `refresh_visio_file()` or `open_visio_file()` after the user confirms,
 
 ---
 
-## 8. Error Handling & Diagnostics
+## 9. Error Handling & Diagnostics
 
 ```python
 # Check which backend was actually used after an apply call
@@ -473,7 +306,7 @@ Common failure modes:
 |---|---|---|
 | `locator.find(...)` returns `None` | Wrong NameU or ID | Call `bridge.parts_manifest()` to list valid paths |
 | `ValueError: Could not find Master matching reference` | Master NameU typo | Check `parts_manifest()["masters"]` for correct names |
-| `backend="desktop"` raises | No Visio COM / no Parallels | Switch to `backend="xml"` |
+| `backend="desktop"` raises | No Visio COM / no Parallels | Use default `backend="auto"` fallback, or force the XML backend only when Desktop fidelity is not required |
 | `Visio session command failed (exit 255)` | Windows guest `python` is missing or not callable | Install real Python in the Windows VM and verify `python --version` via `prlctl exec ... cmd /c python --version` |
 | `ModuleNotFoundError: No module named 'pythoncom'` | `pywin32` missing in the Windows guest | Run `python -m pip install pywin32` in the Windows VM |
 | `pywintypes.com_error ... 文件未找到` / `file not found` while opening in Visio | The mapped `\\Mac\Home\...` path is not accessible from the Windows guest | Verify the UNC path with `os.path.exists(...)` inside the guest; if needed, move/copy the file to a guest-visible path and retry |
@@ -481,7 +314,7 @@ Common failure modes:
 
 ---
 
-## 9. Multi-Step Task Patterns
+## 10. Multi-Step Task Patterns
 
 ### Pattern A: Inspect → Edit Master → Save
 
@@ -500,7 +333,7 @@ commands = [
 ]
 
 # 3. Execute
-apply_skill_commands(bridge, "masters/Cap/shape/5", commands, backend="xml")
+apply_skill_commands(bridge, "masters/Cap/shape/5", commands)
 bridge.save("circuit_modified.vstx")
 ```
 
@@ -513,12 +346,12 @@ bridge = VisioBridge("schematic.vsdx")
 apply_instance_commands(bridge, [
     {"action": "add_instance", "parent": "pages/Page-1", "master": "Res", "x": "2 in", "y": "3 in"},
     {"action": "add_instance", "parent": "pages/Page-1", "master": "Cap", "x": "4 in", "y": "3 in"},
-], backend="xml")
+])
 
 # 2. Update global scale
 apply_settings_commands(bridge, [
     {"action": "update_doc_user_cell", "name": "Scale", "value": "2"},
-], backend="xml")
+])
 
 bridge.save("schematic_layout.vsdx")
 ```
@@ -536,9 +369,9 @@ for v in report.violations:
 # Let user decide which groups to apply; here we apply all
 groups = plan_design_commands(report)
 for g in groups.get("symbol_editor", []):
-    apply_skill_commands(bridge, g["target"], g["commands"], backend="xml")
+    apply_skill_commands(bridge, g["target"], g["commands"])
 settings_cmds = [cmd for g in groups.get("doc_page_settings", []) for cmd in g["commands"]]
-apply_settings_commands(bridge, settings_cmds, backend="xml")
+apply_settings_commands(bridge, settings_cmds)
 
 bridge.save("circuit_fixed.vstx")
 
@@ -549,10 +382,10 @@ print(f"Remaining violations: {len(report2.violations)}")
 
 ---
 
-## 10. Absolute Rules for Agents
+## 11. Absolute Rules for Agents
 
 1. **Read before writing.** Always call `bridge.parts_manifest()` or `to_skill()` / `to_settings_skill()` before generating modification commands.
-2. **Never write raw XML.** Use only the `apply_*` functions and the command JSON schema defined in the SKILL.md files.
+2. **Never write raw XML.** Use only the `apply_*` functions and the command JSON schema defined in the matching `skills/visio-*/SKILL.md`.
 3. **Never overwrite the source file.** Save to a new path and confirm with the user before replacing originals.
 4. **Validate locator paths.** If `locator.find()` returns `None`, stop, report the valid paths from `parts_manifest()`, and ask for clarification.
 5. **Default to `backend="auto"`** to ensure Visio evaluates formulas and updates dependent geometries correctly; only use `backend="xml"` when native Visio is unavailable (e.g. cross-platform/Linux environments) or explicitly requested.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visio Session Manager"
+  short_description: "Manage open Microsoft Visio sessions"
+  default_prompt: "Use $visio-session-manager to list, open, close, or refresh Visio Desktop documents."

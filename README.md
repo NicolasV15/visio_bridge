@@ -50,12 +50,12 @@ pip install -e "./visio_bridge[desktop]"
 
 This installs `pywin32` for COM interop. The modification entry points (`apply_skill_commands`, `apply_settings_commands`, `apply_instance_commands`) default to `backend="auto"`, which prefers Visio Desktop COM and falls back to the XML ZIP writer when COM is unavailable. Use `backend="xml"` to always use the XML path, or `backend="desktop"` to require COM without fallback.
 
-**Windows prerequisites:**
+**Windows Native prerequisites:**
 - Python 3.12 with `python` in the current user's `PATH`
 - `pywin32`: `python -m pip install pywin32`
 - Visio Desktop installed with `Visio.Application` COM ProgID available
 
-**macOS (Parallels) prerequisites:**
+**macOS + Parallels prerequisites:**
 - [Parallels Desktop](https://www.parallels.com/) with a Windows VM
 - Python 3.12 and `pywin32` installed inside the Windows VM
 - Visio Desktop installed inside the Windows VM
@@ -63,7 +63,7 @@ This installs `pywin32` for COM interop. The modification entry points (`apply_s
 
 **Linux prerequisites:**
 - Python 3.10+
-- Defaults to `backend="xml"` automatically (no MS Visio desktop installation is required).
+- With `backend="auto"`, modification calls fall back to the XML ZIP writer because Visio Desktop COM is unavailable.
 
 ### Configuring VM and Backend Preferences
 
@@ -151,12 +151,12 @@ For granular tasks where you call an LLM programmatically to edit shapes or docu
 
 | Agent Role | System Prompt | Execute with |
 |---|---|---|
-| Shape geometry editor | [`skills/symbol_editor/SKILL.md`](skills/symbol_editor/SKILL.md) | `apply_skill_commands()` |
-| Document & page settings | [`skills/doc_page_settings/SKILL.md`](skills/doc_page_settings/SKILL.md) | `apply_settings_commands()` |
-| Read-only file inspector | [`skills/file_inspector/SKILL.md`](skills/file_inspector/SKILL.md) | *(read-only, no apply needed)* |
-| Shape instance manager | [`skills/instance_manager/SKILL.md`](skills/instance_manager/SKILL.md) | `apply_instance_commands()` |
-| Visio desktop session manager | [`skills/visio_session_manager/SKILL.md`](skills/visio_session_manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
-| Design rule auditor | [`skills/design_rules/SKILL.md`](skills/design_rules/SKILL.md) | `plan_design_commands()` |
+| Shape geometry editor | [`skills/visio-symbol-editor/SKILL.md`](skills/visio-symbol-editor/SKILL.md) | `apply_skill_commands()` |
+| Document & page settings | [`skills/visio-doc-page-settings/SKILL.md`](skills/visio-doc-page-settings/SKILL.md) | `apply_settings_commands()` |
+| Read-only file inspector | [`skills/visio-file-inspector/SKILL.md`](skills/visio-file-inspector/SKILL.md) | *(read-only, no apply needed)* |
+| Shape instance manager | [`skills/visio-instance-manager/SKILL.md`](skills/visio-instance-manager/SKILL.md) | `apply_instance_commands()` |
+| Visio desktop session manager | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
+| Design rule auditor | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
 
 ---
 
@@ -187,13 +187,14 @@ Supported locator path formats:
 
 Structured SKILL modules provide complete read/write and session-control capabilities for AI agents:
 
-#### 1. Symbol Editor (`symbol_editor`)
+#### 1. Symbol Editor (`visio-symbol-editor`, executor `symbol_editor`)
 
 Manipulate component geometry, connection pins, and shape properties:
 
 | Action | Description |
 |---|---|
 | `update_transform` | Update bounding box properties (Width, Height, etc.) with values or formulas |
+| `set_shape_cell` | Update generic shape/style cells such as LineWeight, LineColor, or FillPattern |
 | `recalculate_formula_cache` | Recalculate formula cache for a master or page instance scope |
 | `add_connection_pin` | Add connection pins with X/Y coordinates and direction vectors |
 | `delete_connection_pin` | Remove connection pins by ID |
@@ -206,6 +207,8 @@ Manipulate component geometry, connection pins, and shape properties:
 | `update_text` | Update shape text content |
 | `update_shape_user_cell` | Modify or create shape-level custom variables |
 | `delete_shape_user_cell` | Delete shape-level custom variables |
+| `set_section_cell` | Update or create a cell in a named section row |
+| `delete_section_row` | Delete a row from a named section |
 
 **Formula cache recalculation behavior:**
 - Writing to a master shape triggers recalculation of the master and its Master PageSheet.
@@ -214,7 +217,7 @@ Manipulate component geometry, connection pins, and shape properties:
 - Inherited formulas affected by overrides are written as Visio-style cache: `F="Inh"` + computed `V` + inherited `U`.
 - Dirty scopes are automatically flushed before `bridge.save()`.
 
-#### 2. Document & Page Settings (`doc_page_settings`)
+#### 2. Document & Page Settings (`visio-doc-page-settings`, executor `doc_page_settings`)
 
 Extract and modify global configuration and page parameters:
 
@@ -222,11 +225,11 @@ Extract and modify global configuration and page parameters:
 |---|---|
 | `update_doc_user_cell` | Update or create global DocumentSheet User cells (e.g., scale multiplier `M`) |
 | `delete_doc_user_cell` | Delete global custom variables from DocumentSheet |
-| `update_page_cell` | Update page properties (PageWidth, PageHeight, PageScale, etc.) |
+| `update_page_cell` | Update page properties (PageWidth, PageHeight, PageScale, DrawingScale, DrawingSizeType, DrawingScaleType) |
 | `update_page_user_cell` | Update or create page-level custom variables |
 | `delete_page_user_cell` | Delete page-level custom variables |
 
-#### 3. Instance Manager (`instance_manager`)
+#### 3. Instance Manager (`visio-instance-manager`, executor `instance_manager`)
 
 Manage shape instances at the structural/page level:
 
@@ -236,7 +239,7 @@ Manage shape instances at the structural/page level:
 | `copy_instance` | Clone an existing shape instance to a new location |
 | `delete_instance` | Remove a shape instance and all its descendants |
 
-#### 4. File Inspector (`file_inspector`)
+#### 4. File Inspector (`visio-file-inspector`)
 
 Read-only deep inspection of any Visio XML structure:
 

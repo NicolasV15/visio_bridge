@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visio File Inspector"
+  short_description: "Inspect Visio files without modifying them"
+  default_prompt: "Use $visio-file-inspector to inspect this Visio file and summarize its structure."

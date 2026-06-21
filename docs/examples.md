@@ -6,24 +6,26 @@
 
 ## Table of Contents
 
-- [Example 1: Read-only File Inspection with `file_inspector`](#example-1-read-only-file-inspection-with-file_inspector)
-- [Example 2: Edit Component Symbols with `symbol_editor`](#example-2-edit-component-symbols-with-symbol_editor)
+- [Example 1: Read-only File Inspection with `visio-file-inspector`](#example-1-read-only-file-inspection-with-visio-file-inspector)
+- [Example 2: Edit Component Symbols with `visio-symbol-editor`](#example-2-edit-component-symbols-with-visio-symbol-editor)
 - [Example 2b: Recalculate Formula Cache for Page Instances](#example-2b-recalculate-formula-cache-for-page-instances)
-- [Example 3: Edit Document & Page Settings with `doc_page_settings`](#example-3-edit-document--page-settings-with-doc_page_settings)
+- [Example 3: Edit Document & Page Settings with `visio-doc-page-settings`](#example-3-edit-document--page-settings-with-visio-doc-page-settings)
 - [Example 3b: Use Visio Desktop Backend by Default](#example-3b-use-visio-desktop-backend-by-default)
 - [Example 3c: Refresh an Open Visio Document After XML Save](#example-3c-refresh-an-open-visio-document-after-xml-save)
 - [Example 4: Audit Circuit Diagrams with `design` Framework](#example-4-audit-circuit-diagrams-with-design-framework)
-- [Example 5: Manage Shape Instances with `instance_manager`](#example-5-manage-shape-instances-with-instance_manager)
+- [Example 5: Manage Shape Instances with `visio-instance-manager`](#example-5-manage-shape-instances-with-visio-instance-manager)
 
 ---
 
-## Example 1: Read-only File Inspection with `file_inspector`
+## Example 1: Read-only File Inspection with `visio-file-inspector`
 
 Use the parts manifest and locator engine to explore any Visio file's internal structure without modifying it.
 
 ```python
 import sys
-sys.path.insert(0, "/path/to/visio素材")
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd().parent))
 
 from visio_bridge import VisioBridge, ElementLocator
 import xml.etree.ElementTree as ET
@@ -43,7 +45,7 @@ if custom_props is not None:
 
 ---
 
-## Example 2: Edit Component Symbols with `symbol_editor`
+## Example 2: Edit Component Symbols with `visio-symbol-editor`
 
 Extract shape data in AI-readable format and apply structured modification commands.
 
@@ -58,13 +60,13 @@ shape_element = locator.find(shape_path)
 # Convert to AI-readable component data
 skill_data = to_skill(shape_element)
 
-# Execute modifications using the XML ZIP backend;
-# without specifying backend, Visio API is preferred by default.
+# Execute modifications using the default backend selection:
+# prefer Visio API, fall back to XML when unavailable.
 commands = [
     {"action": "update_transform", "property": "Width", "formula": "0.75 in"},
     {"action": "add_connection_pin", "id": "99", "x": "Width*0.5", "y": "Height*0.2", "dir_x": "0", "dir_y": "-1"}
 ]
-apply_skill_commands(bridge, shape_path, commands, backend="xml")
+apply_skill_commands(bridge, shape_path, commands)
 bridge.save("circuit_modified.vstx")
 ```
 
@@ -87,7 +89,6 @@ apply_skill_commands(
     [
         {"action": "update_transform", "property": "Width", "formula": "TheDoc!User.M*1.2"},
     ],
-    backend="xml",
 )
 
 shape = ElementLocator(bridge).find(target)
@@ -101,7 +102,7 @@ bridge.save("circuit_instance_width_modified.vsdx")
 
 ---
 
-## Example 3: Edit Document & Page Settings with `doc_page_settings`
+## Example 3: Edit Document & Page Settings with `visio-doc-page-settings`
 
 Extract and modify global document variables and page-level properties.
 
@@ -114,13 +115,13 @@ bridge = VisioBridge("circuit.vstx")
 settings = to_settings_skill(bridge)
 print("Global and page settings:", settings)
 
-# Execute configuration commands using the XML ZIP backend;
-# without specifying backend, Visio API is preferred by default.
+# Execute configuration commands using the default backend selection:
+# prefer Visio API, fall back to XML when unavailable.
 commands = [
     {"action": "update_doc_user_cell", "name": "AntiGravityScale", "value": "1.5", "unit": "IN"},
     {"action": "update_page_cell", "page": "Page-1", "property": "PageWidth", "formula": "12 in"}
 ]
-apply_settings_commands(bridge, commands, backend="xml")
+apply_settings_commands(bridge, commands)
 bridge.save("circuit_settings_modified.vstx")
 ```
 
@@ -226,7 +227,7 @@ print(json.dumps(command_groups, indent=2, ensure_ascii=False))
 
 ---
 
-## Example 5: Manage Shape Instances with `instance_manager`
+## Example 5: Manage Shape Instances with `visio-instance-manager`
 
 Add, copy, and delete shape instances on pages or inside group containers.
 
@@ -260,7 +261,7 @@ commands = [
     },
 ]
 
-results = apply_instance_commands(bridge, commands, backend="xml")
+results = apply_instance_commands(bridge, commands)
 print("Results:", results)
 bridge.save("circuit_instances_modified.vsdx")
 ```

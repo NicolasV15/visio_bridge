@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visio Symbol Editor"
+  short_description: "Edit Visio shapes with structured commands"
+  default_prompt: "Use $visio-symbol-editor to inspect and edit this Visio shape safely."

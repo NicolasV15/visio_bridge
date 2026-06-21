@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visio Doc Page Settings"
+  short_description: "Edit Visio document and page settings"
+  default_prompt: "Use $visio-doc-page-settings to update page size, scale, or document User cells."

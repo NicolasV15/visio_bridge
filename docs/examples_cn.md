@@ -6,24 +6,26 @@
 
 ## 目录
 
-- [示例 1：使用 `file_inspector` 只读诊断文件结构](#示例-1使用-file_inspector-只读诊断文件结构)
-- [示例 2：使用 `symbol_editor` 编辑元器件符号](#示例-2使用-symbol_editor-编辑元器件符号)
+- [示例 1：使用 `visio-file-inspector` 只读诊断文件结构](#示例-1使用-visio-file-inspector-只读诊断文件结构)
+- [示例 2：使用 `visio-symbol-editor` 编辑元器件符号](#示例-2使用-visio-symbol-editor-编辑元器件符号)
 - [示例 2b：重算页面实例的公式缓存](#示例-2b重算页面实例的公式缓存)
-- [示例 3：使用 `doc_page_settings` 编辑文档与页面配置](#示例-3使用-doc_page_settings-编辑文档与页面配置)
+- [示例 3：使用 `visio-doc-page-settings` 编辑文档与页面配置](#示例-3使用-visio-doc-page-settings-编辑文档与页面配置)
 - [示例 3b：二阶段默认使用 Visio 桌面端后端](#示例-3b二阶段默认使用-visio-桌面端后端)
 - [示例 3c：XML 保存后刷新已打开的 Visio 文档](#示例-3cxml-保存后刷新已打开的-visio-文档)
 - [示例 4：使用 `design` 框架审计统一风格电路图](#示例-4使用-design-框架审计统一风格电路图)
-- [示例 5：使用 `instance_manager` 管理形状实例](#示例-5使用-instance_manager-管理形状实例)
+- [示例 5：使用 `visio-instance-manager` 管理形状实例](#示例-5使用-visio-instance-manager-管理形状实例)
 
 ---
 
-## 示例 1：使用 `file_inspector` 只读诊断文件结构
+## 示例 1：使用 `visio-file-inspector` 只读诊断文件结构
 
 使用资源清单和定位引擎探索任意 Visio 文件的内部结构，不会修改文件。
 
 ```python
 import sys
-sys.path.insert(0, "/path/to/visio素材")
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd().parent))
 
 from visio_bridge import VisioBridge, ElementLocator
 import xml.etree.ElementTree as ET
@@ -43,7 +45,7 @@ if custom_props is not None:
 
 ---
 
-## 示例 2：使用 `symbol_editor` 编辑元器件符号
+## 示例 2：使用 `visio-symbol-editor` 编辑元器件符号
 
 将形状数据提取为 AI 可读格式，并应用结构化修改命令。
 
@@ -58,12 +60,12 @@ shape_element = locator.find(shape_path)
 # 转换为 AI 易读的元器件数据
 skill_data = to_skill(shape_element)
 
-# 调用原 XML ZIP 后端执行修改；默认不指定 backend 时会优先使用 Visio API。
+# 使用默认后端选择执行修改：优先 Visio API，不可用时回退 XML。
 commands = [
     {"action": "update_transform", "property": "Width", "formula": "0.75 in"},
     {"action": "add_connection_pin", "id": "99", "x": "Width*0.5", "y": "Height*0.2", "dir_x": "0", "dir_y": "-1"}
 ]
-apply_skill_commands(bridge, shape_path, commands, backend="xml")
+apply_skill_commands(bridge, shape_path, commands)
 bridge.save("circuit_modified.vstx")
 ```
 
@@ -86,7 +88,6 @@ apply_skill_commands(
     [
         {"action": "update_transform", "property": "Width", "formula": "TheDoc!User.M*1.2"},
     ],
-    backend="xml",
 )
 
 shape = ElementLocator(bridge).find(target)
@@ -99,7 +100,7 @@ bridge.save("circuit_instance_width_modified.vsdx")
 
 ---
 
-## 示例 3：使用 `doc_page_settings` 编辑文档与页面配置
+## 示例 3：使用 `visio-doc-page-settings` 编辑文档与页面配置
 
 提取并修改全局文档变量和页面级属性。
 
@@ -112,12 +113,12 @@ bridge = VisioBridge("circuit.vstx")
 settings = to_settings_skill(bridge)
 print("全局及页面设置：", settings)
 
-# 调用原 XML ZIP 后端配置命令；默认不指定 backend 时会优先使用 Visio API。
+# 使用默认后端选择执行配置命令：优先 Visio API，不可用时回退 XML。
 commands = [
     {"action": "update_doc_user_cell", "name": "AntiGravityScale", "value": "1.5", "unit": "IN"},
     {"action": "update_page_cell", "page": "Page-1", "property": "PageWidth", "formula": "12 in"}
 ]
-apply_settings_commands(bridge, commands, backend="xml")
+apply_settings_commands(bridge, commands)
 bridge.save("circuit_settings_modified.vstx")
 ```
 
@@ -222,7 +223,7 @@ print(json.dumps(command_groups, indent=2, ensure_ascii=False))
 
 ---
 
-## 示例 5：使用 `instance_manager` 管理形状实例
+## 示例 5：使用 `visio-instance-manager` 管理形状实例
 
 在页面或组容器中添加、复制和删除形状实例。
 
@@ -256,7 +257,7 @@ commands = [
     },
 ]
 
-results = apply_instance_commands(bridge, commands, backend="xml")
+results = apply_instance_commands(bridge, commands)
 print("结果:", results)
 bridge.save("circuit_instances_modified.vsdx")
 ```

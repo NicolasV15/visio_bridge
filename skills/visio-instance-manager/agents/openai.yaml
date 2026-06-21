@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visio Instance Manager"
+  short_description: "Add, copy, or delete Visio instances"
+  default_prompt: "Use $visio-instance-manager to place, copy, or remove shapes in this Visio file."

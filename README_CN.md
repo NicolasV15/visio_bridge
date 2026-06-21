@@ -50,12 +50,12 @@ pip install -e "./visio_bridge[desktop]"
 
 此选项会安装 `pywin32` 以支持 COM 互操作。修改入口（`apply_skill_commands`、`apply_settings_commands`、`apply_instance_commands`）默认 `backend="auto"`，优先使用 Visio 桌面端 COM，COM 不可用时自动回退到 XML ZIP 写入。使用 `backend="xml"` 强制走 XML 路径，使用 `backend="desktop"` 强制 COM 且不允许回退。
 
-**Windows 前置条件：**
+**Windows Native 前置条件：**
 - 安装 Python 3.12，并确保当前登录用户的 `PATH` 中 `python` 可用
 - 安装 `pywin32`：`python -m pip install pywin32`
 - 已安装并可启动 Visio 桌面版，`Visio.Application` COM ProgID 可用
 
-**macOS（Parallels）前置条件：**
+**macOS + Parallels 前置条件：**
 - 安装 [Parallels Desktop](https://www.parallels.com/) 并配置 Windows VM
 - 在 Windows VM 中安装 Python 3.12 和 `pywin32`
 - 在 Windows VM 中安装 Visio 桌面版
@@ -63,7 +63,7 @@ pip install -e "./visio_bridge[desktop]"
 
 **Linux 前置条件：**
 - 安装 Python 3.10+
-- 自动默认使用 `backend="xml"`（无需安装/配置 Microsoft Visio 桌面版）。
+- 使用 `backend="auto"` 时，由于 Visio 桌面端 COM 不可用，修改调用会自动回退到 XML ZIP 写入器。
 
 ### 配置虚拟机与后端首选项
 
@@ -151,12 +151,12 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 
 | Agent 角色 | 系统提示 | 执行函数 |
 |---|---|---|
-| 形状几何编辑器 | [`skills/symbol_editor/SKILL.md`](skills/symbol_editor/SKILL.md) | `apply_skill_commands()` |
-| 文档与页面设置 | [`skills/doc_page_settings/SKILL.md`](skills/doc_page_settings/SKILL.md) | `apply_settings_commands()` |
-| 只读文件诊断器 | [`skills/file_inspector/SKILL.md`](skills/file_inspector/SKILL.md) | *（只读，无需 apply）* |
-| 形状实例管理器 | [`skills/instance_manager/SKILL.md`](skills/instance_manager/SKILL.md) | `apply_instance_commands()` |
-| Visio 桌面端会话管理器 | [`skills/visio_session_manager/SKILL.md`](skills/visio_session_manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
-| 设计规则审计员 | [`skills/design_rules/SKILL.md`](skills/design_rules/SKILL.md) | `plan_design_commands()` |
+| 形状几何编辑器 | [`skills/visio-symbol-editor/SKILL.md`](skills/visio-symbol-editor/SKILL.md) | `apply_skill_commands()` |
+| 文档与页面设置 | [`skills/visio-doc-page-settings/SKILL.md`](skills/visio-doc-page-settings/SKILL.md) | `apply_settings_commands()` |
+| 只读文件诊断器 | [`skills/visio-file-inspector/SKILL.md`](skills/visio-file-inspector/SKILL.md) | *（只读，无需 apply）* |
+| 形状实例管理器 | [`skills/visio-instance-manager/SKILL.md`](skills/visio-instance-manager/SKILL.md) | `apply_instance_commands()` |
+| Visio 桌面端会话管理器 | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
+| 设计规则审计员 | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
 
 ---
 
@@ -187,13 +187,14 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 
 结构化 SKILL 模块提供完整的 AI Agent 读写和会话控制能力：
 
-#### 1. 符号编辑器（`symbol_editor`）
+#### 1. 符号编辑器（`visio-symbol-editor`，执行器 `symbol_editor`）
 
 操纵元器件几何、连接引脚与形状属性：
 
 | 动作指令 | 说明 |
 |---|---|
 | `update_transform` | 更新外框属性（Width、Height 等）的值或计算公式 |
+| `set_shape_cell` | 更新通用形状/样式单元格，如 LineWeight、LineColor 或 FillPattern |
 | `recalculate_formula_cache` | 对单个 master 或 page instance 执行公式缓存重算 |
 | `add_connection_pin` | 添加连接引脚，支持 X/Y 坐标与方向向量 |
 | `delete_connection_pin` | 按 ID 删除连接引脚 |
@@ -206,6 +207,8 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 | `update_text` | 更新形状内部文本内容 |
 | `update_shape_user_cell` | 修改或新增形状级自定义局部变量 |
 | `delete_shape_user_cell` | 删除指定的形状级自定义变量 |
+| `set_section_cell` | 更新或创建指定 Section 行中的单元格 |
+| `delete_section_row` | 删除指定 Section 中的一行 |
 
 **公式缓存重算默认行为：**
 - 写 master shape 时，默认重算所属 master 及其 Master PageSheet。
@@ -214,7 +217,7 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 - 受 override 影响的继承公式默认写为 Visio-style cache：`F="Inh"` + computed `V` + inherited `U`。
 - dirty scope 在 `bridge.save()` 前自动 flush。
 
-#### 2. 文档与页面设置（`doc_page_settings`）
+#### 2. 文档与页面设置（`visio-doc-page-settings`，执行器 `doc_page_settings`）
 
 提取与修改 Visio 全局配置和页面参数：
 
@@ -222,11 +225,11 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 |---|---|
 | `update_doc_user_cell` | 更新或创建全局 DocumentSheet 的 User 属性单元格（如全局尺寸比例 `M`） |
 | `delete_doc_user_cell` | 从 DocumentSheet 中物理删除指定的全局自定义变量 |
-| `update_page_cell` | 更新指定 PageSheet 页面属性（如 PageWidth、PageHeight、PageScale 等） |
+| `update_page_cell` | 更新指定 PageSheet 页面属性（PageWidth、PageHeight、PageScale、DrawingScale、DrawingSizeType、DrawingScaleType） |
 | `update_page_user_cell` | 更新或创建页面级自定义局部变量 |
 | `delete_page_user_cell` | 从 PageSheet 中物理删除指定的页面级自定义变量 |
 
-#### 3. 实例管理器（`instance_manager`）
+#### 3. 实例管理器（`visio-instance-manager`，执行器 `instance_manager`）
 
 在结构/页面层级管理形状实例：
 
@@ -236,7 +239,7 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 | `copy_instance` | 将已有形状实例克隆到新位置 |
 | `delete_instance` | 删除形状实例及其所有后代元素 |
 
-#### 4. 文件诊断器（`file_inspector`）
+#### 4. 文件诊断器（`visio-file-inspector`）
 
 只读深度检查任意 Visio XML 结构：
 

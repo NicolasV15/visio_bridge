@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visio Design Rules"
+  short_description: "Audit Visio files and plan design fixes"
+  default_prompt: "Use $visio-design-rules to audit this Visio file and plan any structured fixes."
