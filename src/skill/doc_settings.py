@@ -41,50 +41,55 @@ def to_settings_skill(bridge: VisioBridge) -> dict:
 
     # 2. Read page settings for all pages
     page_cells = ["PageWidth", "PageHeight", "PageScale", "DrawingScale", "DrawingSizeType", "DrawingScaleType"]
+    pages_tree = bridge.get_xml("visio/pages/pages.xml")
     for page in bridge.pages:
-        page_tree = bridge.get_xml(page.xml_path)
-        if page_tree is not None:
-            page_sheet = find_child(page_tree.getroot(), "PageSheet")
-            page_data = {
-                "id": page.page_id,
-                "name": page.name_u or page.name,
-                "xml_path": page.xml_path,
-                "cells": {}
-            }
-            if page_sheet is not None:
-                # 2a. Read standard PageSheet cells
-                for c_name in page_cells:
-                    cell = get_cell(page_sheet, c_name)
-                    if cell is not None:
-                        c_data = {}
-                        if cell.get("V") is not None:
-                            c_data["val"] = cell.get("V")
-                        if cell.get("F") is not None:
-                            c_data["formula"] = cell.get("F")
-                        if cell.get("U") is not None:
-                            c_data["unit"] = cell.get("U")
-                        page_data["cells"][c_name] = c_data
-                
-                # 2b. Read PageSheet User-defined cells (custom page variables)
-                page_data["user_cells"] = {}
-                user_sec = get_section(page_sheet, "User")
-                if user_sec is not None:
-                    for row in user_sec:
-                        if local(row.tag) == "Row":
-                            name = row.get("N")
-                            if name:
-                                val_cell = find_child(row, "Cell", N="Value")
-                                if val_cell is not None:
-                                    c_data = {}
-                                    if val_cell.get("V") is not None:
-                                        c_data["val"] = val_cell.get("V")
-                                    if val_cell.get("F") is not None:
-                                        c_data["formula"] = val_cell.get("F")
-                                    if val_cell.get("U") is not None:
-                                        c_data["unit"] = val_cell.get("U")
-                                    page_data["user_cells"][name] = c_data
-                                    
-            settings["pages"].append(page_data)
+        page_sheet = None
+        if pages_tree is not None:
+            for p_elem in pages_tree.getroot():
+                if local(p_elem.tag) == "Page" and p_elem.get("ID") == page.page_id:
+                    page_sheet = find_child(p_elem, "PageSheet")
+                    break
+
+        page_data = {
+            "id": page.page_id,
+            "name": page.name_u or page.name,
+            "xml_path": page.xml_path,
+            "cells": {}
+        }
+        if page_sheet is not None:
+            # 2a. Read standard PageSheet cells
+            for c_name in page_cells:
+                cell = get_cell(page_sheet, c_name)
+                if cell is not None:
+                    c_data = {}
+                    if cell.get("V") is not None:
+                        c_data["val"] = cell.get("V")
+                    if cell.get("F") is not None:
+                        c_data["formula"] = cell.get("F")
+                    if cell.get("U") is not None:
+                        c_data["unit"] = cell.get("U")
+                    page_data["cells"][c_name] = c_data
+            
+            # 2b. Read PageSheet User-defined cells (custom page variables)
+            page_data["user_cells"] = {}
+            user_sec = get_section(page_sheet, "User")
+            if user_sec is not None:
+                for row in user_sec:
+                    if local(row.tag) == "Row":
+                        name = row.get("N")
+                        if name:
+                            val_cell = find_child(row, "Cell", N="Value")
+                            if val_cell is not None:
+                                c_data = {}
+                                if val_cell.get("V") is not None:
+                                    c_data["val"] = val_cell.get("V")
+                                if val_cell.get("F") is not None:
+                                    c_data["formula"] = val_cell.get("F")
+                                if val_cell.get("U") is not None:
+                                    c_data["unit"] = val_cell.get("U")
+                                page_data["user_cells"][name] = c_data
+                                
+        settings["pages"].append(page_data)
 
     return settings
 
@@ -148,12 +153,15 @@ def apply_settings_commands(
                     break
             
             if target_page is not None:
-                page_tree = bridge.get_xml(target_page.xml_path)
-                if page_tree is not None:
-                    page_sheet = ensure_child(page_tree.getroot(), "PageSheet")
-                    if prop:
-                        set_cell(page_sheet, prop, value=val, formula=formula, unit=unit)
-                        bridge.mark_modified(target_page.xml_path)
+                pages_tree = bridge.get_xml("visio/pages/pages.xml")
+                if pages_tree is not None:
+                    for p_elem in pages_tree.getroot():
+                        if local(p_elem.tag) == "Page" and p_elem.get("ID") == target_page.page_id:
+                            page_sheet = ensure_child(p_elem, "PageSheet")
+                            if prop:
+                                set_cell(page_sheet, prop, value=val, formula=formula, unit=unit)
+                                bridge.mark_modified("visio/pages/pages.xml")
+                            break
 
         elif action == "update_page_user_cell":
             page_ref = cmd.get("page")
@@ -170,12 +178,15 @@ def apply_settings_commands(
                     break
             
             if target_page is not None:
-                page_tree = bridge.get_xml(target_page.xml_path)
-                if page_tree is not None:
-                    page_sheet = ensure_child(page_tree.getroot(), "PageSheet")
-                    if name:
-                        set_user_row(page_sheet, name, formula or "", val or "0", unit)
-                        bridge.mark_modified(target_page.xml_path)
+                pages_tree = bridge.get_xml("visio/pages/pages.xml")
+                if pages_tree is not None:
+                    for p_elem in pages_tree.getroot():
+                        if local(p_elem.tag) == "Page" and p_elem.get("ID") == target_page.page_id:
+                            page_sheet = ensure_child(p_elem, "PageSheet")
+                            if name:
+                                set_user_row(page_sheet, name, formula or "", val or "0", unit)
+                                bridge.mark_modified("visio/pages/pages.xml")
+                            break
 
         elif action == "delete_doc_user_cell":
             doc_tree = bridge.get_xml("visio/document.xml")
@@ -200,17 +211,20 @@ def apply_settings_commands(
                     target_page = p
                     break
             if target_page is not None:
-                page_tree = bridge.get_xml(target_page.xml_path)
-                if page_tree is not None:
-                    page_sheet = find_child(page_tree.getroot(), "PageSheet")
-                    if page_sheet is not None:
-                        user_sec = get_section(page_sheet, "User")
-                        if user_sec is not None:
-                            for row in list(user_sec):
-                                if local(row.tag) == "Row" and row.get("N") == name:
-                                    user_sec.remove(row)
-                                    bridge.mark_modified(target_page.xml_path)
-                                    break
+                pages_tree = bridge.get_xml("visio/pages/pages.xml")
+                if pages_tree is not None:
+                    for p_elem in pages_tree.getroot():
+                        if local(p_elem.tag) == "Page" and p_elem.get("ID") == target_page.page_id:
+                            page_sheet = find_child(p_elem, "PageSheet")
+                            if page_sheet is not None:
+                                user_sec = get_section(page_sheet, "User")
+                                if user_sec is not None:
+                                    for row in list(user_sec):
+                                        if local(row.tag) == "Row" and row.get("N") == name:
+                                            user_sec.remove(row)
+                                            bridge.mark_modified("visio/pages/pages.xml")
+                                            break
+                            break
 
     save_xml_fallback_if_requested(bridge, output_path)
 
