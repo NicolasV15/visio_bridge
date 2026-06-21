@@ -32,13 +32,14 @@
 
 ```bash
 # 克隆仓库
-git clone --branch v0.1.1 https://github.com/NicolasV15/visio_bridge.git
+git clone --branch latest https://github.com/NicolasV15/visio_bridge.git
 
 # 从父目录以可编辑模式安装
 pip install -e ./visio_bridge
 ```
 
-将 `v0.1.1` 替换为你要安装的发布 tag。
+`latest` 会跟踪最近一次正式发布。若你需要可复现安装，请替换成
+固定 tag，例如 `v0.1.1`。
 
 > **注意**：核心库**零第三方依赖**——仅使用 Python 标准库模块。
 
@@ -160,14 +161,15 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 | Visio 桌面端会话管理器 | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
 | 设计规则审计员 | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
 
-### Codex Skill 发布与更新
+### Codex Skill 安装与更新
 
-`skills/` 目录是 Codex skills 的发布源。每次发布都用一个 Git tag
-固定版本，例如 `v0.1.1` 或 `v0.2.0`，然后把这个 tag 对应的快照装入
-Codex。
-请让 `pyproject.toml` 里的版本号与发布的 Git tag 保持一致。
+安装最近一次发布的 skills：
 
-安装或刷新全部内置 skills：
+```bash
+python scripts/update_codex_skills.py
+```
+
+安装指定版本：
 
 ```bash
 python scripts/update_codex_skills.py --ref v0.1.1
@@ -176,12 +178,12 @@ python scripts/update_codex_skills.py --ref v0.1.1
 只安装指定 skills：
 
 ```bash
-python scripts/update_codex_skills.py --ref v0.1.1 --skills visio-file-inspector visio-symbol-editor
+python scripts/update_codex_skills.py --skills visio-file-inspector visio-symbol-editor
 ```
 
-这个辅助脚本会先移除 `~/.codex/skills/<skill-name>` 的旧副本，再安装
-新的快照。若你更想手动升级，也可以用相同的 `skills/<name>` 路径和
-目标 tag 重新安装，或者先删除本地 skill 目录再重新安装。
+这个辅助脚本会先移除 `~/.codex/skills/<skill-name>` 里的旧副本，再安
+装新的版本。需要可复现安装时，请使用固定 tag；想升级到新版本时，
+重新运行同一条命令即可。
 
 任何 skill 更新后都要重启 Codex，新的 skill 才会被加载。
 

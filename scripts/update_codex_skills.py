@@ -15,7 +15,7 @@ from urllib.parse import quote, urlencode
 from pathlib import Path
 
 DEFAULT_REPO = "NicolasV15/visio_bridge"
-DEFAULT_REF = "main"
+DEFAULT_REF = "latest"
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_SKILLS_ROOT = REPO_ROOT / "skills"

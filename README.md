@@ -32,13 +32,14 @@
 
 ```bash
 # Clone the repository
-git clone --branch v0.1.1 https://github.com/NicolasV15/visio_bridge.git
+git clone --branch latest https://github.com/NicolasV15/visio_bridge.git
 
 # Install in editable mode from the parent directory
 pip install -e ./visio_bridge
 ```
 
-Replace `v0.1.1` with the release tag you want to install.
+`latest` tracks the most recent published release. Replace it with a fixed
+tag such as `v0.1.1` when you need a reproducible snapshot.
 
 > **Note**: The core library has **zero third-party dependencies** — it uses only Python standard library modules.
 
@@ -160,29 +161,30 @@ For granular tasks where you call an LLM programmatically to edit shapes or docu
 | Visio desktop session manager | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
 | Design rule auditor | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
 
-### Codex Skill Release And Update
+### Install And Update Codex Skills
 
-The `skills/` directory is the publish source for Codex skills. Release a new
-version with a Git tag such as `v0.1.1` or `v0.2.0`, then install that tagged
-snapshot into Codex.
-Keep the version in `pyproject.toml` aligned with the Git tag you publish.
+Install the latest published skill set:
 
-Install or refresh all bundled skills from a release tag:
+```bash
+python scripts/update_codex_skills.py
+```
+
+Install a specific published version:
 
 ```bash
 python scripts/update_codex_skills.py --ref v0.1.1
 ```
 
-Install only selected skills from a release tag:
+Install only selected skills:
 
 ```bash
-python scripts/update_codex_skills.py --ref v0.1.1 --skills visio-file-inspector visio-symbol-editor
+python scripts/update_codex_skills.py --skills visio-file-inspector visio-symbol-editor
 ```
 
-The helper removes any existing `~/.codex/skills/<skill-name>` copy before
-installing the new snapshot. If you prefer a manual upgrade path, reinstall the
-same `skills/<name>` path from GitHub with the tag you want, or remove the
-local skill directory and run the installer again.
+The helper replaces the existing local copy of each skill in
+`~/.codex/skills/<skill-name>` before installing the new version. Use a fixed
+tag when you need a reproducible snapshot, and rerun the command whenever you
+want to update to a newer release.
 
 After any skill update, restart Codex to pick up the new skills.
 
