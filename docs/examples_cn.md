@@ -11,6 +11,7 @@
 - [示例 2b：重算页面实例的公式缓存](#示例-2b重算页面实例的公式缓存)
 - [示例 3：使用 `doc_page_settings` 编辑文档与页面配置](#示例-3使用-doc_page_settings-编辑文档与页面配置)
 - [示例 3b：二阶段默认使用 Visio 桌面端后端](#示例-3b二阶段默认使用-visio-桌面端后端)
+- [示例 3c：XML 保存后刷新已打开的 Visio 文档](#示例-3cxml-保存后刷新已打开的-visio-文档)
 - [示例 4：使用 `design` 框架审计统一风格电路图](#示例-4使用-design-框架审计统一风格电路图)
 - [示例 5：使用 `instance_manager` 管理形状实例](#示例-5使用-instance_manager-管理形状实例)
 
@@ -157,6 +158,36 @@ apply_settings_commands(
     [{"action": "update_doc_user_cell", "name": "M", "value": "1"}],
     backend="xml",
 )
+```
+
+---
+
+## 示例 3c：XML 保存后刷新已打开的 Visio 文档
+
+如果通过 XML 后端修改文件，而同一个文件已经在 Visio 桌面端打开，保存后需要显式刷新 Visio 窗口。
+
+```python
+from visio_bridge import (
+    VisioBridge,
+    apply_settings_commands,
+    find_visio_document,
+    refresh_visio_file,
+)
+
+path = "circuit_settings_modified.vsdx"
+bridge = VisioBridge(path)
+
+apply_settings_commands(
+    bridge,
+    [{"action": "update_doc_user_cell", "name": "Scale", "value": "2"}],
+    backend="xml",
+)
+bridge.save(path)
+
+if find_visio_document(path) is not None:
+    # 默认行为会丢弃 Visio UI 中未保存的编辑，然后关闭并重新打开文档，
+    # 使 Visio 显示磁盘上的最新文件内容。
+    refresh_visio_file(path)
 ```
 
 ---

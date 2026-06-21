@@ -17,9 +17,10 @@
 - **Zero dependencies** — Pure Python standard library; no third-party packages required for core functionality.
 - **OPC relationship mapping** — Automatically resolves Masters, Pages, Themes, Windows, and DocProps through the OPC relationship chain. `parts_manifest()` provides a full topology map with zero manual parsing.
 - **Unified locator engine** — `ElementLocator.find(path)` supports precise and fuzzy multi-level path navigation across masters, pages, document settings, themes, windows, and metadata.
-- **AI-native SKILL interface** — Five structured SKILL modules let AI agents read, edit, and manage Visio files through JSON command lists — no raw XML required.
+- **AI-native SKILL interface** — Structured SKILL modules let AI agents read, edit, manage, and control Visio files through Python APIs and JSON command lists — no raw XML required.
 - **Formula cache engine** — Automatic ShapeSheet formula recalculation with master/instance scope support, inheritance chain resolution, and Visio-compatible `F="Inh"` cache synchronization.
 - **Dual backend architecture** — Write via XML ZIP (cross-platform) or Visio Desktop COM API (Windows / macOS via Parallels), with automatic fallback.
+- **Visio session management** — Detect documents open in Visio Desktop, open/close files, and refresh a document after Visio Bridge updates it on disk.
 - **Design rule framework** — Pluggable audit profiles (`DesignProfile`) for automated style compliance checking, violation reporting, and suggested fix planning.
 
 ---
@@ -112,6 +113,28 @@ Controls a real, headless/headed instance of Microsoft Visio via `pywin32` COM A
   - On Linux and other platforms, it defaults to `xml`.
 * **Recommendation**: To ensure full cell formula calculation and layout engine fidelity, **it is recommended to use the default `backend="auto"` (or explicitly `backend="desktop"`)**. Use `backend="xml"` only when cross-platform deployment (e.g. Linux) is strictly required and cache updates are handled separately.
 
+### Visio Desktop Session Management
+
+The Desktop transport also exposes helpers for managing the user's current Visio instance:
+
+```python
+from visio_bridge import (
+    list_visio_documents,
+    open_visio_file,
+    close_visio_file,
+    refresh_visio_file,
+)
+
+print(list_visio_documents())
+open_visio_file("circuit_modified.vsdx")
+
+# After an XML backend save, close and reopen the matching Visio document.
+# Default refresh behavior discards unsaved edits made in the Visio UI.
+refresh_visio_file("circuit_modified.vsdx")
+```
+
+`refresh_visio_file()` is implemented as a close-and-reopen operation because Visio does not expose a general in-place reload for an already-open Open XML document. By default it uses `discard_unsaved=True`, so the reopened document reflects the latest file on disk.
+
 ### 🤖 AI Agent Integration & Playbook
 
 Visio Bridge is designed from the ground up for AI automation. We provide two levels of agent guidelines:
@@ -132,6 +155,7 @@ For granular tasks where you call an LLM programmatically to edit shapes or docu
 | Document & page settings | [`skills/doc_page_settings/SKILL.md`](skills/doc_page_settings/SKILL.md) | `apply_settings_commands()` |
 | Read-only file inspector | [`skills/file_inspector/SKILL.md`](skills/file_inspector/SKILL.md) | *(read-only, no apply needed)* |
 | Shape instance manager | [`skills/instance_manager/SKILL.md`](skills/instance_manager/SKILL.md) | `apply_instance_commands()` |
+| Visio desktop session manager | [`skills/visio_session_manager/SKILL.md`](skills/visio_session_manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
 | Design rule auditor | [`skills/design_rules/SKILL.md`](skills/design_rules/SKILL.md) | `plan_design_commands()` |
 
 ---
@@ -161,7 +185,7 @@ Supported locator path formats:
 
 ### Capability 2: SKILL Bidirectional Interface (Processing & SKILL Interface)
 
-Four structured SKILL modules provide complete read/write capabilities for AI agents:
+Structured SKILL modules provide complete read/write and session-control capabilities for AI agents:
 
 #### 1. Symbol Editor (`symbol_editor`)
 
@@ -269,6 +293,14 @@ Read-only deep inspection of any Visio XML structure:
 | Class / Function | Import | Description |
 |---|---|---|
 | `VisioDesktopSession` | `from visio_bridge import VisioDesktopSession` | Visio COM automation session manager |
+| `VisioSessionManager` | `from visio_bridge import VisioSessionManager` | Runs Visio Desktop session-control actions |
+| `VisioDocumentSessionInfo` | `from visio_bridge import VisioDocumentSessionInfo` | Open document session metadata |
+| `VisioSessionActionResult` | `from visio_bridge import VisioSessionActionResult` | Open/close/refresh action result |
+| `list_visio_documents()` | `from visio_bridge import list_visio_documents` | List documents currently open in Visio Desktop |
+| `find_visio_document(path)` | `from visio_bridge import find_visio_document` | Find an already-open Visio document by path |
+| `open_visio_file(path)` | `from visio_bridge import open_visio_file` | Open a file in Visio or activate it if already open |
+| `close_visio_file(path)` | `from visio_bridge import close_visio_file` | Close an open Visio document, refusing unsaved UI changes by default |
+| `refresh_visio_file(path)` | `from visio_bridge import refresh_visio_file` | Close and reopen a file so Visio reflects the latest disk contents |
 | `ParallelsTransport` | `from visio_bridge import ParallelsTransport` | macOS → Windows VM transport via Parallels |
 | `LocalWindowsTransport` | `from visio_bridge import LocalWindowsTransport` | Native Windows transport |
 | `create_default_transport()` | `from visio_bridge import create_default_transport` | Auto-detect and create the appropriate transport |

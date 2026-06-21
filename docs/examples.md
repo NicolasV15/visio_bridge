@@ -11,6 +11,7 @@
 - [Example 2b: Recalculate Formula Cache for Page Instances](#example-2b-recalculate-formula-cache-for-page-instances)
 - [Example 3: Edit Document & Page Settings with `doc_page_settings`](#example-3-edit-document--page-settings-with-doc_page_settings)
 - [Example 3b: Use Visio Desktop Backend by Default](#example-3b-use-visio-desktop-backend-by-default)
+- [Example 3c: Refresh an Open Visio Document After XML Save](#example-3c-refresh-an-open-visio-document-after-xml-save)
 - [Example 4: Audit Circuit Diagrams with `design` Framework](#example-4-audit-circuit-diagrams-with-design-framework)
 - [Example 5: Manage Shape Instances with `instance_manager`](#example-5-manage-shape-instances-with-instance_manager)
 
@@ -160,6 +161,37 @@ apply_settings_commands(
     [{"action": "update_doc_user_cell", "name": "M", "value": "1"}],
     backend="xml",
 )
+```
+
+---
+
+## Example 3c: Refresh an Open Visio Document After XML Save
+
+When you modify a file through the XML backend while the same file is already
+open in Visio Desktop, explicitly refresh the Visio window after saving.
+
+```python
+from visio_bridge import (
+    VisioBridge,
+    apply_settings_commands,
+    find_visio_document,
+    refresh_visio_file,
+)
+
+path = "circuit_settings_modified.vsdx"
+bridge = VisioBridge(path)
+
+apply_settings_commands(
+    bridge,
+    [{"action": "update_doc_user_cell", "name": "Scale", "value": "2"}],
+    backend="xml",
+)
+bridge.save(path)
+
+if find_visio_document(path) is not None:
+    # Default behavior discards unsaved edits made in the Visio UI, then
+    # closes and reopens the document so Visio reflects the latest disk file.
+    refresh_visio_file(path)
 ```
 
 ---

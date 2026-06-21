@@ -26,6 +26,11 @@ from visio_bridge import (
     to_settings_skill,
     apply_settings_commands,
     apply_instance_commands,
+    list_visio_documents,
+    find_visio_document,
+    open_visio_file,
+    close_visio_file,
+    refresh_visio_file,
     audit_design,
     plan_design_commands,
     render_design_profile_markdown,
@@ -76,6 +81,7 @@ Parse the user's instruction and route to the matching SKILL module. When the in
 | "修改形状" / "改几何" / "改引脚" / "画" / edit shape / geometry / pin / draw | **symbol_editor** | [`skills/symbol_editor/SKILL.md`](skills/symbol_editor/SKILL.md) | `apply_skill_commands()` |
 | "改页面" / "改文档" / "比例" / "页宽" / page size / scale / document settings | **doc_page_settings** | [`skills/doc_page_settings/SKILL.md`](skills/doc_page_settings/SKILL.md) | `apply_settings_commands()` |
 | "添加形状" / "复制" / "删除形状" / add shape / copy shape / drop / delete instance | **instance_manager** | [`skills/instance_manager/SKILL.md`](skills/instance_manager/SKILL.md) | `apply_instance_commands()` |
+| "会话" / "打开" / "关闭" / "刷新" / reload / session / open in Visio / close in Visio | **visio_session_manager** | [`skills/visio_session_manager/SKILL.md`](skills/visio_session_manager/SKILL.md) | `list_visio_documents()` / `open_visio_file()` / `close_visio_file()` / `refresh_visio_file()` |
 | "审计" / "检查规范" / "自动修复" / audit / design check / compliance / fix violations | **design_rules** | [`skills/design_rules/SKILL.md`](skills/design_rules/SKILL.md) | `plan_design_commands()` → then `apply_*` |
 
 ---
@@ -312,22 +318,60 @@ print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
 command_groups = plan_design_commands(report)
 # command_groups = {
 #   "symbol_editor": [{"target": "masters/Cap/shape/5", "commands": [...]}],
-#   "doc_page_settings": {"commands": [...]},
-#   "instance_manager": {"commands": [...]},
+#   "doc_page_settings": [{"commands": [...]}],
+#   "instance_manager": [{"commands": [...]}],
 # }
 
 # 4. Apply fix groups selectively (confirm with user before applying)
 for group in command_groups.get("symbol_editor", []):
     apply_skill_commands(bridge, group["target"], group["commands"], backend="xml")
 
-apply_settings_commands(bridge, command_groups.get("doc_page_settings", {}).get("commands", []), backend="xml")
-apply_instance_commands(bridge, command_groups.get("instance_manager", {}).get("commands", []), backend="xml")
+settings_cmds = [cmd for group in command_groups.get("doc_page_settings", []) for cmd in group["commands"]]
+apply_settings_commands(bridge, settings_cmds, backend="xml")
+
+instance_cmds = [cmd for group in command_groups.get("instance_manager", []) for cmd in group["commands"]]
+apply_instance_commands(bridge, instance_cmds, backend="xml")
 
 bridge.save("output_fixed.vstx")
 
 # 5. Re-audit to verify
 report2 = audit_design(bridge, CIRCUIT_SCHEMATIC_PROFILE)
 ```
+
+---
+
+### 5.6 `visio_session_manager` — Visio Desktop Session Control
+
+**Use when:** detecting currently open Visio documents, opening/closing files in Visio Desktop, or refreshing a file after Visio Bridge modified it on disk.
+
+```python
+from visio_bridge import (
+    list_visio_documents,
+    find_visio_document,
+    open_visio_file,
+    close_visio_file,
+    refresh_visio_file,
+)
+
+# List open documents in the user's current Visio instance.
+docs = list_visio_documents()
+
+# Open or activate a document.
+open_visio_file("circuit_modified.vsdx", visible=True, activate=True)
+
+# Safe close: refuses to close if Visio has unsaved UI changes.
+close_visio_file("circuit_modified.vsdx")
+
+# Refresh after a disk write. Default behavior discards unsaved Visio UI edits.
+refresh_visio_file("circuit_modified.vsdx")
+```
+
+**Important rules:**
+- Session management requires the Desktop COM transport; it is not available through the XML ZIP backend.
+- `refresh_visio_file()` is a close-and-reopen operation, not an in-place XML reload.
+- The default refresh policy is `discard_unsaved=True`, so unsaved edits made in the Visio UI are intentionally discarded to show the latest file on disk.
+- These helpers do not run shape/page/instance commands. Use the matching `apply_*` API first, save the file, then call `refresh_visio_file()` if the user has that file open in Visio.
+- After saving a modified file, use `find_visio_document(output_path)` when Desktop transport is available. If it is already open, ask the user whether to refresh it; if it is not open, ask whether to open it. Do not refresh/open silently unless explicitly requested.
 
 ---
 
@@ -356,6 +400,18 @@ All `apply_*` functions accept a `backend` keyword. Choose the right value:
 apply_skill_commands(bridge, shape_path, commands, backend="xml")
 bridge.save("circuit_modified.vstx")   # new file, source untouched
 ```
+
+After saving, agents may offer a Visio UI follow-up:
+
+```python
+doc = find_visio_document("circuit_modified.vstx")
+if doc is not None:
+    print("Offer to refresh the already-open Visio session.")
+else:
+    print("Offer to open the saved file in Visio.")
+```
+
+Only call `refresh_visio_file()` or `open_visio_file()` after the user confirms, unless the user explicitly asked for automatic refresh/open behavior.
 
 ---
 
@@ -440,7 +496,8 @@ for v in report.violations:
 groups = plan_design_commands(report)
 for g in groups.get("symbol_editor", []):
     apply_skill_commands(bridge, g["target"], g["commands"], backend="xml")
-apply_settings_commands(bridge, groups.get("doc_page_settings", {}).get("commands", []), backend="xml")
+settings_cmds = [cmd for g in groups.get("doc_page_settings", []) for cmd in g["commands"]]
+apply_settings_commands(bridge, settings_cmds, backend="xml")
 
 bridge.save("circuit_fixed.vstx")
 
