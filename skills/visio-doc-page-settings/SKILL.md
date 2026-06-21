@@ -30,11 +30,11 @@ scale formulas or page names.
 ## Execute
 
 ```python
-apply_settings_commands(bridge, commands)
+apply_settings_commands(bridge, commands, backend="desktop")
 bridge.save("input_modified.vstx")
 ```
 
-Let `backend="auto"` be the default. Save to a new output path unless the user
+Pass an explicit `backend` that matches `.visio_bridge.json`. Save to a new output path unless the user
 explicitly confirms overwriting the source.
 
 ## Readable Data

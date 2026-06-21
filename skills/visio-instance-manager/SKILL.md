@@ -32,12 +32,12 @@ specific page, shape, or master.
 ## Execute
 
 ```python
-results = apply_instance_commands(bridge, commands)
+results = apply_instance_commands(bridge, commands, backend="desktop")
 bridge.save("input_modified.vsdx")
 print(json.dumps(results, indent=2, ensure_ascii=False))
 ```
 
-Let `backend="auto"` be the default. Save to a new file unless the user
+Pass an explicit `backend` that matches `.visio_bridge.json`. Save to a new file unless the user
 explicitly confirms overwriting.
 
 ## Command Actions

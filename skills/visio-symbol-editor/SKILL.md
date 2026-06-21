@@ -37,11 +37,10 @@ paths from `parts_manifest()`.
 ## Execute
 
 Batch all commands for the same `shape_path` in one call. Let
-`backend="auto"` be the default unless the user or environment requires XML
-only.
+the explicit `backend` match the local `.visio_bridge.json` configuration.
 
 ```python
-apply_skill_commands(bridge, shape_path, commands)
+apply_skill_commands(bridge, shape_path, commands, backend="desktop")
 bridge.save("input_modified.vstx")
 ```
 

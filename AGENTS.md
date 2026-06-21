@@ -50,7 +50,7 @@ pip install -e ".[desktop]" # + Visio Desktop COM support (Windows/Parallels)
 
 ### 2.1 Workspace Configuration & Setup
 
-You can configure the default backend, Parallels VM name, and timeout settings via a local `visio_bridge.json` or `.visio_bridge.json` configuration file. Run the interactive setup tool to configure your environment:
+You must explicitly configure the write backend, Parallels VM name, and timeout settings via a local `visio_bridge.json` or `.visio_bridge.json` configuration file. Run the interactive setup tool to configure your environment:
 
 ```bash
 python -m visio_bridge.src.core.setup_cli
@@ -62,15 +62,15 @@ This generates a `.visio_bridge.json` file in the current working directory:
 
 ```json
 {
-  "backend": "auto",
-  "desktop_transport_mode": "auto",
+  "backend": "desktop",
+  "desktop_transport_mode": "parallels",
   "vm_name": "Windows 11",
   "visible": false,
   "timeout": 180
 }
 ```
 
-Agents should read `visio_bridge.json` or `.visio_bridge.json` if present to respect the user's customized default settings.
+Agents must read `visio_bridge.json` or `.visio_bridge.json` if present. Every write call requires an explicit `backend` argument, and it must match the configured `backend`.
 
 ### 2.2 Desktop Session Prerequisites
 
@@ -196,13 +196,13 @@ Feed `skill_data` or `settings` to the matching SKILL agent (or reason about it 
 
 ```python
 # symbol_editor
-apply_skill_commands(bridge, "masters/NMOS4/shape/5", commands)
+apply_skill_commands(bridge, "masters/NMOS4/shape/5", commands, backend="desktop")
 
 # doc_page_settings
-apply_settings_commands(bridge, commands)
+apply_settings_commands(bridge, commands, backend="desktop")
 
 # instance_manager
-apply_instance_commands(bridge, commands)
+apply_instance_commands(bridge, commands, backend="desktop")
 
 bridge.save("path/to/output.vstx")
 ```
@@ -252,11 +252,10 @@ All `apply_*` functions accept a `backend` keyword. Choose the right value:
 
 | `backend` value | Behavior |
 |---|---|
-| `"auto"` *(default)* | Prefer Visio Desktop COM; fall back to XML ZIP if COM unavailable. **If a local configuration exists, the default backend defined in it is used.** |
 | `"xml"` | Always use XML ZIP writer (cross-platform, no Visio installation needed) |
 | `"desktop"` / `"visio"` | Require Visio Desktop COM; raise an error if unavailable (no fallback) |
 
-**Rule of thumb for agents:** use the default `backend="auto"` (which prefers native Desktop Visio COM automation for full formula and layout calculation fidelity) unless native Visio is strictly unavailable (e.g., in headless Linux test runs) and only direct XML zip modifications are supported.
+**Rule of thumb for agents:** always pass `backend="desktop"` or `backend="xml"` explicitly. The selected backend must match the configured backend. If they differ, stop and report the mismatch instead of switching modes.
 
 ---
 
@@ -268,7 +267,7 @@ All `apply_*` functions accept a `backend` keyword. Choose the right value:
 
 ```python
 # Safe pattern
-apply_skill_commands(bridge, shape_path, commands)
+apply_skill_commands(bridge, shape_path, commands, backend="desktop")
 bridge.save("circuit_modified.vstx")   # new file, source untouched
 ```
 
@@ -306,7 +305,7 @@ Common failure modes:
 |---|---|---|
 | `locator.find(...)` returns `None` | Wrong NameU or ID | Call `bridge.parts_manifest()` to list valid paths |
 | `ValueError: Could not find Master matching reference` | Master NameU typo | Check `parts_manifest()["masters"]` for correct names |
-| `backend="desktop"` raises | No Visio COM / no Parallels | Use default `backend="auto"` fallback, or force the XML backend only when Desktop fidelity is not required |
+| `backend="desktop"` raises | No Visio COM / no Parallels, or Desktop transport/path/permission/configuration failure | Fix the Desktop environment or permissions. Use `backend="xml"` only when Desktop fidelity is not required and XML writing was explicitly chosen. |
 | `Visio session command failed (exit 255)` | Windows guest `python` is missing or not callable | Install real Python in the Windows VM and verify `python --version` via `prlctl exec ... cmd /c python --version` |
 | `ModuleNotFoundError: No module named 'pythoncom'` | `pywin32` missing in the Windows guest | Run `python -m pip install pywin32` in the Windows VM |
 | `pywintypes.com_error ... 文件未找到` / `file not found` while opening in Visio | The mapped `\\Mac\Home\...` path is not accessible from the Windows guest | Verify the UNC path with `os.path.exists(...)` inside the guest; if needed, move/copy the file to a guest-visible path and retry |
@@ -333,7 +332,7 @@ commands = [
 ]
 
 # 3. Execute
-apply_skill_commands(bridge, "masters/Cap/shape/5", commands)
+apply_skill_commands(bridge, "masters/Cap/shape/5", commands, backend="desktop")
 bridge.save("circuit_modified.vstx")
 ```
 
@@ -346,12 +345,12 @@ bridge = VisioBridge("schematic.vsdx")
 apply_instance_commands(bridge, [
     {"action": "add_instance", "parent": "pages/Page-1", "master": "Res", "x": "2 in", "y": "3 in"},
     {"action": "add_instance", "parent": "pages/Page-1", "master": "Cap", "x": "4 in", "y": "3 in"},
-])
+], backend="desktop")
 
 # 2. Update global scale
 apply_settings_commands(bridge, [
     {"action": "update_doc_user_cell", "name": "Scale", "value": "2"},
-])
+], backend="desktop")
 
 bridge.save("schematic_layout.vsdx")
 ```
@@ -369,9 +368,9 @@ for v in report.violations:
 # Let user decide which groups to apply; here we apply all
 groups = plan_design_commands(report)
 for g in groups.get("symbol_editor", []):
-    apply_skill_commands(bridge, g["target"], g["commands"])
+    apply_skill_commands(bridge, g["target"], g["commands"], backend="desktop")
 settings_cmds = [cmd for g in groups.get("doc_page_settings", []) for cmd in g["commands"]]
-apply_settings_commands(bridge, settings_cmds)
+apply_settings_commands(bridge, settings_cmds, backend="desktop")
 
 bridge.save("circuit_fixed.vstx")
 
@@ -388,7 +387,7 @@ print(f"Remaining violations: {len(report2.violations)}")
 2. **Never write raw XML.** Use only the `apply_*` functions and the command JSON schema defined in the matching `skills/visio-*/SKILL.md`.
 3. **Never overwrite the source file.** Save to a new path and confirm with the user before replacing originals.
 4. **Validate locator paths.** If `locator.find()` returns `None`, stop, report the valid paths from `parts_manifest()`, and ask for clarification.
-5. **Default to `backend="auto"`** to ensure Visio evaluates formulas and updates dependent geometries correctly; only use `backend="xml"` when native Visio is unavailable (e.g. cross-platform/Linux environments) or explicitly requested.
+5. **Always pass an explicit backend** and make it match configuration. Use `backend="desktop"` only with `"backend": "desktop"` config, and `backend="xml"` only with `"backend": "xml"` config. A mismatch is a hard error.
 6. **Re-audit after bulk fixes.** If you applied `plan_design_commands()` output, run `audit_design()` again to report the remaining violation count.
 7. **Batch commands per target.** Pass all commands for the same `shape_path` in a single `apply_skill_commands()` call rather than one call per command.
 8. **Do not invent values.** If a formula requires knowledge of the current document's scale or a master's existing dimensions, read them first with `to_skill()` or `to_settings_skill()`.

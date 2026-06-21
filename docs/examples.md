@@ -60,13 +60,12 @@ shape_element = locator.find(shape_path)
 # Convert to AI-readable component data
 skill_data = to_skill(shape_element)
 
-# Execute modifications using the default backend selection:
-# prefer Visio API, fall back to XML when unavailable.
+# Execute modifications using the explicitly configured backend.
 commands = [
     {"action": "update_transform", "property": "Width", "formula": "0.75 in"},
     {"action": "add_connection_pin", "id": "99", "x": "Width*0.5", "y": "Height*0.2", "dir_x": "0", "dir_y": "-1"}
 ]
-apply_skill_commands(bridge, shape_path, commands)
+apply_skill_commands(bridge, shape_path, commands, backend="desktop")
 bridge.save("circuit_modified.vstx")
 ```
 
@@ -89,6 +88,7 @@ apply_skill_commands(
     [
         {"action": "update_transform", "property": "Width", "formula": "TheDoc!User.M*1.2"},
     ],
+    backend="desktop",
 )
 
 shape = ElementLocator(bridge).find(target)
@@ -115,21 +115,20 @@ bridge = VisioBridge("circuit.vstx")
 settings = to_settings_skill(bridge)
 print("Global and page settings:", settings)
 
-# Execute configuration commands using the default backend selection:
-# prefer Visio API, fall back to XML when unavailable.
+# Execute configuration commands using the explicitly configured backend.
 commands = [
     {"action": "update_doc_user_cell", "name": "AntiGravityScale", "value": "1.5", "unit": "IN"},
     {"action": "update_page_cell", "page": "Page-1", "property": "PageWidth", "formula": "12 in"}
 ]
-apply_settings_commands(bridge, commands)
+apply_settings_commands(bridge, commands, backend="desktop")
 bridge.save("circuit_settings_modified.vstx")
 ```
 
 ---
 
-## Example 3b: Use Visio Desktop Backend by Default
+## Example 3b: Use the Explicit Visio Desktop Backend
 
-Phase 2 entry points default to Visio Desktop COM when available, with automatic fallback to XML.
+Phase 2 entry points require an explicit backend that matches `.visio_bridge.json`.
 
 ```python
 from visio_bridge import VisioBridge, apply_skill_commands, apply_settings_commands
@@ -144,7 +143,7 @@ apply_skill_commands(
         {"action": "update_text", "text": "NMOS"},
     ],
     output_path="circuit_desktop_modified.vstx",
-    # backend="auto" is the default: prefer Visio API, fall back to XML when unavailable.
+    backend="desktop",
 )
 
 modified = VisioBridge("circuit_desktop_modified.vstx")
@@ -154,9 +153,10 @@ apply_settings_commands(
         {"action": "update_doc_user_cell", "name": "M", "value": "1"},
     ],
     output_path="circuit_desktop_modified.vstx",
+    backend="desktop",
 )
 
-# To force the original XML ZIP backend:
+# To use the XML ZIP backend, .visio_bridge.json must also set "backend": "xml".
 apply_settings_commands(
     modified,
     [{"action": "update_doc_user_cell", "name": "M", "value": "1"}],
@@ -261,7 +261,7 @@ commands = [
     },
 ]
 
-results = apply_instance_commands(bridge, commands)
+results = apply_instance_commands(bridge, commands, backend="desktop")
 print("Results:", results)
 bridge.save("circuit_instances_modified.vsdx")
 ```

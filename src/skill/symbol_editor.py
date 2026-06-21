@@ -8,7 +8,7 @@ from ..core.locator import ElementLocator, resolve_path
 from ..core.xml_utils import get_cell, set_cell, get_section, ensure_section, find_child, local, q, set_user_row, ensure_child
 from ..core.formula_cache import eval_formula_for_cache, recalculate_formula_cache
 from ..desktop import apply_skill_commands_desktop
-from .backend import save_xml_fallback_if_requested, try_desktop_backend
+from .backend import save_xml_if_requested, try_desktop_backend
 
 def extract_cells(shape: ET.Element, names: list[str]) -> dict[str, dict[str, str]]:
     """Extract cell values and formulas into a dict."""
@@ -448,7 +448,7 @@ def apply_skill_commands(
     shape_path: str,
     commands: list[dict],
     *,
-    backend: str | None = "auto",
+    backend: str,
     output_path: str | None = None,
     **desktop_kwargs,
 ) -> None:
@@ -883,7 +883,7 @@ def apply_skill_commands(
     bridge.mark_modified(xml_file_path)
     if formula_cache_dirty and flush_after_batch:
         bridge.flush_formula_cache()
-    save_xml_fallback_if_requested(bridge, output_path)
+    save_xml_if_requested(bridge, output_path)
 
 def get_next_geom_ix(shape: ET.Element) -> str:
     """Helper to find the next unused Geometry section index in a shape."""

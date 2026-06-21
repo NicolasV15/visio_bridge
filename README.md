@@ -19,7 +19,7 @@
 - **Unified locator engine** — `ElementLocator.find(path)` supports precise and fuzzy multi-level path navigation across masters, pages, document settings, themes, windows, and metadata.
 - **AI-native SKILL interface** — Structured SKILL modules let AI agents read, edit, manage, and control Visio files through Python APIs and JSON command lists — no raw XML required.
 - **Formula cache engine** — Automatic ShapeSheet formula recalculation with master/instance scope support, inheritance chain resolution, and Visio-compatible `F="Inh"` cache synchronization.
-- **Dual backend architecture** — Write via XML ZIP (cross-platform) or Visio Desktop COM API (Windows / macOS via Parallels), with automatic fallback.
+- **Dual backend architecture** — Write via XML ZIP (cross-platform) or Visio Desktop COM API (Windows / macOS via Parallels); write calls require an explicit backend that matches local configuration.
 - **Visio session management** — Detect documents open in Visio Desktop, open/close files, and refresh a document after Visio Bridge updates it on disk.
 - **Design rule framework** — Pluggable audit profiles (`DesignProfile`) for automated style compliance checking, violation reporting, and suggested fix planning.
 
@@ -51,7 +51,7 @@ For Visio Desktop COM automation (Windows / macOS via Parallels):
 pip install -e "./visio_bridge[desktop]"
 ```
 
-This installs `pywin32` for COM interop. The modification entry points (`apply_skill_commands`, `apply_settings_commands`, `apply_instance_commands`) default to `backend="auto"`, which prefers Visio Desktop COM and falls back to the XML ZIP writer when COM is unavailable. Use `backend="xml"` to always use the XML path, or `backend="desktop"` to require COM without fallback.
+This installs `pywin32` for COM interop. The modification entry points (`apply_skill_commands`, `apply_settings_commands`, `apply_instance_commands`) require an explicit `backend="desktop"` or `backend="xml"` argument. The requested backend must match `.visio_bridge.json`; mismatches and missing backend configuration are hard errors.
 
 **Windows Native prerequisites:**
 - Python 3.12 with `python` in the current user's `PATH`
@@ -62,11 +62,11 @@ This installs `pywin32` for COM interop. The modification entry points (`apply_s
 - [Parallels Desktop](https://www.parallels.com/) with a Windows VM
 - Python 3.12 and `pywin32` installed inside the Windows VM
 - Visio Desktop installed inside the Windows VM
-- *Note: If no VM name is specified in `.visio_bridge.json`, the transport dynamically auto-detects and connects to your running/registered VM at runtime.*
+- `.visio_bridge.json` must set `"desktop_transport_mode": "parallels"` and a concrete `"vm_name"`.
 
 **Linux prerequisites:**
 - Python 3.10+
-- With `backend="auto"`, modification calls fall back to the XML ZIP writer because Visio Desktop COM is unavailable.
+- Configure `"backend": "xml"` and pass `backend="xml"` explicitly for write calls.
 
 ### Configuring VM and Backend Preferences
 
@@ -81,7 +81,7 @@ python -m visio_bridge.src.core.setup_cli
 ```
 
 This generates a local `.visio_bridge.json` configuration file in the working directory to store VM names and backend overrides dynamically.
-- Parallels mode enables `stage_local` by default — files are staged to `%TEMP%` before editing to avoid UNC path and CJK directory instability.
+- Desktop transports send runner code and command payloads over stdin/stdout and read/write the target Visio paths directly; no host or VM staging files are created.
 
 ## 🔄 Dual-Backend Architecture
 
@@ -109,12 +109,12 @@ Controls a real, headless/headed instance of Microsoft Visio via `pywin32` COM A
   - **Slower Performance**: Takes 1 to 3 seconds per run to launch/attach the application and open files.
   - **Interactivity Risks**: Can hang if Visio displays modal error dialogs or prompts.
 
-### Default & Recommendation
-* **Default Behavior**: Defaults to `backend="auto"`. 
-  - On Windows, it auto-detects `pywin32` and Visio, choosing `desktop` if available; otherwise falls back to `xml`.
-  - On macOS, it checks if `prlctl` is available and VM is running, choosing `desktop` via Parallels if VM is found; otherwise falls back to `xml`.
-  - On Linux and other platforms, it defaults to `xml`.
-* **Recommendation**: To ensure full cell formula calculation and layout engine fidelity, **it is recommended to use the default `backend="auto"` (or explicitly `backend="desktop"`)**. Use `backend="xml"` only when cross-platform deployment (e.g. Linux) is strictly required and cache updates are handled separately.
+### Backend Configuration
+* **Explicit mode required**: write calls must pass `backend="desktop"` or `backend="xml"`.
+  - The requested backend must match `.visio_bridge.json`.
+  - Desktop mode also requires an explicit `desktop_transport_mode` (`"windows-local"` or `"parallels"`).
+  - XML mode is available only when both the config and call select `xml`.
+* **Recommendation**: Use `backend="desktop"` with matching config for full cell formula calculation and layout fidelity. Use `backend="xml"` only when XML writing is intentionally configured.
 
 ### Visio Desktop Session Management
 
@@ -316,10 +316,10 @@ Read-only deep inspection of any Visio XML structure:
 | Function | Import | Description |
 |---|---|---|
 | `to_skill(shape)` | `from visio_bridge import to_skill` | Convert a shape element to AI-readable JSON format |
-| `apply_skill_commands(bridge, path, cmds)` | `from visio_bridge import apply_skill_commands` | Execute symbol editor commands |
+| `apply_skill_commands(bridge, path, cmds, backend="desktop")` | `from visio_bridge import apply_skill_commands` | Execute symbol editor commands with an explicit backend |
 | `to_settings_skill(bridge)` | `from visio_bridge import to_settings_skill` | Extract document & page settings as structured JSON |
-| `apply_settings_commands(bridge, cmds)` | `from visio_bridge import apply_settings_commands` | Execute document/page settings commands |
-| `apply_instance_commands(bridge, cmds)` | `from visio_bridge import apply_instance_commands` | Execute instance management commands (add/copy/delete) |
+| `apply_settings_commands(bridge, cmds, backend="desktop")` | `from visio_bridge import apply_settings_commands` | Execute document/page settings commands with an explicit backend |
+| `apply_instance_commands(bridge, cmds, backend="desktop")` | `from visio_bridge import apply_instance_commands` | Execute instance management commands with an explicit backend |
 
 ### Desktop Backend
 
@@ -336,7 +336,7 @@ Read-only deep inspection of any Visio XML structure:
 | `refresh_visio_file(path)` | `from visio_bridge import refresh_visio_file` | Close and reopen a file so Visio reflects the latest disk contents |
 | `ParallelsTransport` | `from visio_bridge import ParallelsTransport` | macOS → Windows VM transport via Parallels |
 | `LocalWindowsTransport` | `from visio_bridge import LocalWindowsTransport` | Native Windows transport |
-| `create_default_transport()` | `from visio_bridge import create_default_transport` | Auto-detect and create the appropriate transport |
+| `create_default_transport()` | `from visio_bridge import create_default_transport` | Create the transport from explicit configuration |
 
 ### Design Framework
 
@@ -368,7 +368,7 @@ Visio Bridge's core is built on direct XML parsing because:
 3. **AI-friendly** — Structured XML access is easier for AI agents to reason about
 4. **Lightweight** — Zero dependencies; no COM interop overhead
 
-When higher fidelity is needed (e.g., formula evaluation or rendering), the optional Desktop Backend provides COM automation with automatic fallback to XML.
+When higher fidelity is needed (e.g., formula evaluation or rendering), the optional Desktop Backend provides COM automation. XML writes require both `"backend": "xml"` in config and `backend="xml"` in the call.
 </details>
 
 <details>
@@ -385,8 +385,8 @@ Legacy binary formats (`.vsd`, `.vst`, `.vss`) are **not** supported.
 <details>
 <summary><strong>How do I use the Visio Desktop backend?</strong></summary>
 
-Use `backend="auto"` by default. Visio Bridge chooses the Desktop COM backend
-when the current environment can control Visio, otherwise it falls back to XML.
+Configure `"backend": "desktop"` and pass `backend="desktop"` explicitly.
+Visio Bridge does not infer or switch write modes at runtime.
 
 **Windows Native**
 
@@ -400,11 +400,11 @@ when the current environment can control Visio, otherwise it falls back to XML.
 1. Install [Parallels Desktop](https://www.parallels.com/) with a Windows VM
 2. Install Python 3.12 and `pywin32` inside the Windows VM
 3. Install Visio Desktop inside the Windows VM
-4. Use `backend="auto"` (default) — Visio Bridge will automatically detect `prlctl` and route commands through Parallels
+4. Set `"desktop_transport_mode": "parallels"` and `"vm_name": "<your VM>"` in `.visio_bridge.json`
 
 ```python
-# Windows Native or macOS + Parallels: prefer Visio COM, fall back to XML.
-apply_skill_commands(bridge, path, commands)  # backend="auto" by default
+# Windows Native or macOS + Parallels
+apply_skill_commands(bridge, path, commands, backend="desktop")
 ```
 </details>
 

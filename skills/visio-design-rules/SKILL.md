@@ -49,9 +49,9 @@ Command groups are keyed by executor:
 
 | Executor key | Apply with |
 |---|---|
-| `doc_page_settings` | `apply_settings_commands(bridge, commands)` |
-| `symbol_editor` | `apply_skill_commands(bridge, group["target"], commands)` |
-| `instance_manager` | `apply_instance_commands(bridge, commands)` |
+| `doc_page_settings` | `apply_settings_commands(bridge, commands, backend="desktop")` |
+| `symbol_editor` | `apply_skill_commands(bridge, group["target"], commands, backend="desktop")` |
+| `instance_manager` | `apply_instance_commands(bridge, commands, backend="desktop")` |
 
 Keep these underscore executor keys; they are the code-level API contract.
 
@@ -69,15 +69,15 @@ Example application loop:
 from visio_bridge import apply_skill_commands, apply_settings_commands, apply_instance_commands
 
 for group in groups.get("symbol_editor", []):
-    apply_skill_commands(bridge, group["target"], group["commands"])
+    apply_skill_commands(bridge, group["target"], group["commands"], backend="desktop")
 
 settings_cmds = [cmd for group in groups.get("doc_page_settings", []) for cmd in group["commands"]]
 if settings_cmds:
-    apply_settings_commands(bridge, settings_cmds)
+    apply_settings_commands(bridge, settings_cmds, backend="desktop")
 
 instance_cmds = [cmd for group in groups.get("instance_manager", []) for cmd in group["commands"]]
 if instance_cmds:
-    apply_instance_commands(bridge, instance_cmds)
+    apply_instance_commands(bridge, instance_cmds, backend="desktop")
 
 bridge.save("input_fixed.vstx")
 ```

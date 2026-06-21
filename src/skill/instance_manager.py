@@ -8,7 +8,7 @@ from ..core.bridge import VisioBridge
 from ..core.locator import ElementLocator, resolve_path
 from ..core.xml_utils import get_cell, set_cell, find_child, local, q, ensure_child
 from ..desktop import apply_instance_commands_desktop
-from .backend import save_xml_fallback_if_requested, try_desktop_backend
+from .backend import save_xml_if_requested, try_desktop_backend
 
 def _find_all_ids(elem: ET.Element) -> set[int]:
     """Collect all shape IDs currently in use inside the element tree."""
@@ -87,7 +87,7 @@ def apply_instance_commands(
     bridge: VisioBridge,
     commands: list[dict],
     *,
-    backend: str | None = "auto",
+    backend: str,
     output_path: str | None = None,
     **desktop_kwargs,
 ) -> list[dict]:
@@ -305,6 +305,6 @@ def apply_instance_commands(
 
     if formula_cache_dirty:
         bridge.flush_formula_cache()
-    save_xml_fallback_if_requested(bridge, output_path)
+    save_xml_if_requested(bridge, output_path)
 
     return results

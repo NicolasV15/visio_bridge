@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from ..core.bridge import VisioBridge
 from ..core.xml_utils import get_cell, set_cell, get_section, find_child, local, q, set_user_row, ensure_child
 from ..desktop import apply_settings_commands_desktop
-from .backend import save_xml_fallback_if_requested, try_desktop_backend
+from .backend import save_xml_if_requested, try_desktop_backend
 
 def to_settings_skill(bridge: VisioBridge) -> dict:
     """Extract page and document settings from a Visio file into a clean JSON structure."""
@@ -98,7 +98,7 @@ def apply_settings_commands(
     bridge: VisioBridge,
     commands: list[dict],
     *,
-    backend: str | None = "auto",
+    backend: str,
     output_path: str | None = None,
     **desktop_kwargs,
 ) -> None:
@@ -226,5 +226,4 @@ def apply_settings_commands(
                                             break
                             break
 
-    save_xml_fallback_if_requested(bridge, output_path)
-
+    save_xml_if_requested(bridge, output_path)

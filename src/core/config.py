@@ -7,12 +7,11 @@ from typing import Any
 
 # Default configuration values
 DEFAULTS: dict[str, Any] = {
-    "backend": "auto",
-    "desktop_transport_mode": "auto",
+    "backend": None,
+    "desktop_transport_mode": None,
     "vm_name": "",
     "visible": False,
     "timeout": 180,
-    "stage_local": None,
 }
 
 _cached_config: dict[str, Any] | None = None

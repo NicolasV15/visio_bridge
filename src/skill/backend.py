@@ -9,23 +9,38 @@ from ..core.config import load_config
 
 XML_BACKENDS = {"xml", "zip", "legacy", "original"}
 DESKTOP_BACKENDS = {"desktop", "visio", "visio-api", "com"}
-AUTO_BACKENDS = {"auto", None}
 
 
-def normalize_backend(backend: str | None) -> str:
-    if backend in AUTO_BACKENDS:
-        cfg = load_config()
-        backend = cfg.get("backend", "auto")
-        if backend in AUTO_BACKENDS:
-            return "auto"
+def _normalize_backend_value(backend: str | None, *, source: str) -> str:
+    if backend is None:
+        raise ValueError(
+            f"{source} backend is required. Choose backend='desktop' or backend='xml'."
+        )
     normalized = str(backend).strip().lower()
     if normalized in XML_BACKENDS:
         return "xml"
     if normalized in DESKTOP_BACKENDS:
         return "desktop"
-    if normalized == "auto":
-        return "auto"
-    raise ValueError(f"Unsupported phase-two backend: {backend}")
+    raise ValueError(f"Unsupported {source} backend: {backend}")
+
+
+def normalize_backend(backend: str | None) -> str:
+    return _normalize_backend_value(backend, source="phase-two")
+
+
+def require_configured_backend(selected_backend: str) -> str:
+    cfg = load_config()
+    configured = _normalize_backend_value(
+        cfg.get("backend"),
+        source="configured",
+    )
+    if configured != selected_backend:
+        raise RuntimeError(
+            "Configured backend does not match requested backend. "
+            f"configured={configured!r}, requested={selected_backend!r}. "
+            "Update .visio_bridge.json or call the entry point with the configured mode."
+        )
+    return configured
 
 
 def _same_path(left: str | os.PathLike[str], right: str | os.PathLike[str]) -> bool:
@@ -56,14 +71,14 @@ def try_desktop_backend(
     output_path: str | os.PathLike[str] | None,
     desktop_apply: Callable[..., Any],
 ) -> tuple[bool, Any]:
-    """Run desktop backend when requested/available.
+    """Run the explicitly selected backend after config consistency checks.
 
     Returns ``(True, result)`` when the desktop backend handled the command.
-    Returns ``(False, None)`` when ``backend='auto'`` cannot use desktop and
-    the caller should fall back to the XML implementation.
+    Returns ``(False, None)`` when explicit XML mode was selected and allowed.
     """
 
     selected = normalize_backend(backend)
+    require_configured_backend(selected)
     if selected == "xml":
         _record_backend(bridge, "xml")
         return False, None
@@ -71,18 +86,15 @@ def try_desktop_backend(
     try:
         result = desktop_apply(output_path=output_path)
     except Exception as exc:
-        if selected == "desktop":
-            _record_backend(bridge, "desktop", exc)
-            raise
-        _record_backend(bridge, "xml", exc)
-        return False, None
+        _record_backend(bridge, "desktop", exc)
+        raise
 
     _reload_bridge_if_target_matches_source(bridge, output_path)
     _record_backend(bridge, "desktop")
     return True, result
 
 
-def save_xml_fallback_if_requested(
+def save_xml_if_requested(
     bridge: Any,
     output_path: str | os.PathLike[str] | None,
 ) -> None:

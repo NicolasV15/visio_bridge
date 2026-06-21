@@ -10,53 +10,13 @@ commands to a Windows Python runner that automates Visio desktop through
 
 from __future__ import annotations
 
+import base64
 import json
 import os
-import platform
-import shutil
 import subprocess
-import uuid
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Sequence
-
-
-DEFAULT_PARALLELS_VM = ""
-
-
-def _get_default_parallels_vm() -> str:
-    """Attempt to dynamically find a running or registered Windows VM via prlctl."""
-    prlctl_path = shutil.which("prlctl")
-    if not prlctl_path:
-        return ""
-    
-    # 1. Try to find the first running VM
-    try:
-        output = subprocess.check_output([prlctl_path, "list"], text=True, stderr=subprocess.DEVNULL)
-        lines = output.strip().splitlines()
-        if len(lines) > 1:
-            parts = lines[1].split()
-            if len(parts) >= 4:
-                return " ".join(parts[3:])
-            elif len(parts) == 3:
-                return parts[2]
-    except Exception:
-        pass
-
-    # 2. Fall back to the first registered VM (even if stopped)
-    try:
-        output = subprocess.check_output([prlctl_path, "list", "--all"], text=True, stderr=subprocess.DEVNULL)
-        lines = output.strip().splitlines()
-        if len(lines) > 1:
-            parts = lines[1].split()
-            if len(parts) >= 4:
-                return " ".join(parts[3:])
-            elif len(parts) == 3:
-                return parts[2]
-    except Exception:
-        pass
-        
-    return ""
 
 
 @dataclass
@@ -73,14 +33,18 @@ class DesktopTransport:
     """Small transport protocol implemented by concrete desktop runners."""
 
     mode = "base"
-    stage_local_default = False
-    host_artifact_stage_default = False
 
     def map_path(self, path: str | os.PathLike[str]) -> str:
         raise NotImplementedError
 
-    def artifact_dir(self, host_file: Path) -> Path:
-        return host_file.parent
+    def run_python_source(
+        self,
+        source: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        raise NotImplementedError
 
     def run_python_file(
         self,
@@ -89,7 +53,29 @@ class DesktopTransport:
         *,
         timeout: int,
     ) -> subprocess.CompletedProcess[str]:
-        raise NotImplementedError
+        source = Path(script_path).read_text(encoding="utf-8")
+        payload = json.loads(Path(payload_path).read_text(encoding="utf-8"))
+        return self.run_python_source(source, payload, timeout=timeout)
+
+
+PYTHON_STDIN_BOOTSTRAP = (
+    "import base64,io,json,sys;"
+    "bundle=json.load(sys.stdin);"
+    "source=base64.b64decode(bundle['source_b64']).decode('utf-8');"
+    "payload=base64.b64decode(bundle['payload_b64']).decode('utf-8');"
+    "sys.stdin=io.StringIO(payload);"
+    "exec(source, {'__name__':'__main__'})"
+)
+
+
+def _runner_input(source: str, payload: Mapping[str, Any]) -> str:
+    payload_text = json.dumps(payload, ensure_ascii=False)
+    return json.dumps(
+        {
+            "source_b64": base64.b64encode(source.encode("utf-8")).decode("ascii"),
+            "payload_b64": base64.b64encode(payload_text.encode("utf-8")).decode("ascii"),
+        }
+    )
 
 
 def _windows_join(*parts: str) -> str:
@@ -122,33 +108,27 @@ def mac_path_to_parallels_unc(
 class ParallelsTransport(DesktopTransport):
     """Run Python inside a Parallels Windows VM."""
 
-    vm_name: str = DEFAULT_PARALLELS_VM
+    vm_name: str = ""
     home: str | os.PathLike[str] | None = None
     prlctl: str = "prlctl"
     current_user: bool = True
 
     mode: str = "parallels"
-    stage_local_default: bool = True
-    host_artifact_stage_default: bool = True
 
     def map_path(self, path: str | os.PathLike[str]) -> str:
         return mac_path_to_parallels_unc(path, home=self.home)
 
-    def artifact_dir(self, host_file: Path) -> Path:
-        base_home = Path(self.home).expanduser() if self.home is not None else Path.home()
-        return base_home / "Documents" / "visio_bridge_desktop_runs"
-
-    def run_python_file(
+    def run_python_source(
         self,
-        script_path: str,
-        payload_path: str,
+        source: str,
+        payload: Mapping[str, Any],
         *,
         timeout: int,
     ) -> subprocess.CompletedProcess[str]:
-        vm = self.vm_name or _get_default_parallels_vm()
+        vm = self.vm_name
         if not vm:
             raise RuntimeError(
-                "Parallels VM name is not specified and could not be auto-detected via prlctl."
+                "Parallels VM name must be configured explicitly for desktop transport."
             )
         cmd = [
             self.prlctl,
@@ -161,13 +141,14 @@ class ParallelsTransport(DesktopTransport):
             [
                 "cmd",
                 "/c",
-                f'python "{script_path}" "{payload_path}"',
+                f'python -c "{PYTHON_STDIN_BOOTSTRAP}"',
             ]
         )
         return subprocess.run(
             cmd,
             check=False,
             capture_output=True,
+            input=_runner_input(source, payload),
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -181,28 +162,27 @@ class LocalWindowsTransport(DesktopTransport):
 
     python: str = "python"
     mode: str = "windows-local"
-    stage_local_default: bool = False
-    host_artifact_stage_default: bool = False
 
     def map_path(self, path: str | os.PathLike[str]) -> str:
         return str(path)
 
-    def run_python_file(
+    def run_python_source(
         self,
-        script_path: str,
-        payload_path: str,
+        source: str,
+        payload: Mapping[str, Any],
         *,
         timeout: int,
     ) -> subprocess.CompletedProcess[str]:
         cmd = [
             self.python,
-            script_path,
-            payload_path,
+            "-c",
+            PYTHON_STDIN_BOOTSTRAP,
         ]
         return subprocess.run(
             cmd,
             check=False,
             capture_output=True,
+            input=_runner_input(source, payload),
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -220,29 +200,26 @@ def create_default_transport(
     cfg = load_config()
     
     if mode is None:
-        mode = cfg.get("desktop_transport_mode", "auto")
+        mode = cfg.get("desktop_transport_mode")
     
     if not vm_name:
         vm_name = cfg.get("vm_name")
-    if not vm_name:
-        vm_name = _get_default_parallels_vm() or DEFAULT_PARALLELS_VM
 
-    normalized = str(mode).lower()
+    if mode is None:
+        raise ValueError(
+            "desktop_transport_mode must be configured explicitly as "
+            "'windows-local' or 'parallels'."
+        )
+    normalized = str(mode).strip().lower()
     if normalized in {"windows", "windows-local", "local"}:
         return LocalWindowsTransport()
     if normalized in {"parallels", "parallels-desktop"}:
+        if not vm_name:
+            raise ValueError(
+                "vm_name must be configured explicitly when desktop_transport_mode='parallels'."
+            )
         return ParallelsTransport(vm_name=vm_name)
-    if normalized != "auto":
-        raise ValueError(f"Unsupported desktop transport mode: {mode}")
-
-    if platform.system() == "Windows":
-        return LocalWindowsTransport()
-    if shutil.which("prlctl"):
-        return ParallelsTransport(vm_name=vm_name)
-    raise RuntimeError(
-        "Could not auto-detect a Visio desktop transport. Install Parallels "
-        "Tools/prlctl on macOS or run on Windows."
-    )
+    raise ValueError(f"Unsupported desktop transport mode: {mode}")
 
 
 def _normalize_command_groups(
@@ -297,25 +274,16 @@ class VisioDesktopSession:
         cfg = load_config()
 
         if mode is None:
-            mode = cfg.get("desktop_transport_mode", "auto")
+            mode = cfg.get("desktop_transport_mode")
         
         if not vm_name:
             vm_name = cfg.get("vm_name")
-        if not vm_name:
-            vm_name = _get_default_parallels_vm() or DEFAULT_PARALLELS_VM
 
         self.transport = transport or create_default_transport(mode, vm_name=vm_name)
         self.timeout = timeout if timeout is not None else cfg.get("timeout", 180)
         self.visible = visible if visible is not None else cfg.get("visible", False)
         self.keep_artifacts = keep_artifacts
-        
-        if stage_local is None:
-            stage_local = cfg.get("stage_local")
-        self.stage_local = (
-            getattr(self.transport, "stage_local_default", False)
-            if stage_local is None
-            else stage_local
-        )
+        _ = stage_local  # Compatibility no-op; desktop runs no longer stage files.
 
     def run(
         self,
@@ -326,98 +294,41 @@ class VisioDesktopSession:
     ) -> DesktopCommandResult:
         host_file = Path(file_path).expanduser()
         host_output = Path(output_path).expanduser() if output_path else None
-        artifact_dir_getter = getattr(self.transport, "artifact_dir", None)
-        artifact_dir = (
-            artifact_dir_getter(host_file)
-            if artifact_dir_getter is not None
-            else host_file.parent
-        )
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        run_id = uuid.uuid4().hex
-        script_host = artifact_dir / f".visio_bridge_desktop_{run_id}.py"
-        payload_host = artifact_dir / f".visio_bridge_desktop_{run_id}.json"
-        log_host = artifact_dir / f".visio_bridge_desktop_{run_id}.log"
-        cleanup_paths = [script_host, payload_host]
-        if not self.keep_artifacts:
-            cleanup_paths.append(log_host)
-
-        payload_input_host = host_file
-        payload_output_host = host_output
-        host_copyback_source: Path | None = None
-        host_copyback_dest: Path | None = None
-        if getattr(self.transport, "host_artifact_stage_default", False):
-            input_ext = host_file.suffix or ".vsdx"
-            staged_input = artifact_dir / f"visio_bridge_input_{run_id}{input_ext}"
-            shutil.copy2(host_file, staged_input)
-            cleanup_paths.append(staged_input)
-            payload_input_host = staged_input
-
-            if host_output is not None:
-                output_ext = host_output.suffix or input_ext
-                staged_output = artifact_dir / f"visio_bridge_output_{run_id}{output_ext}"
-                cleanup_paths.append(staged_output)
-                payload_output_host = staged_output
-                host_copyback_source = staged_output
-                host_copyback_dest = host_output
-            else:
-                payload_output_host = None
-                host_copyback_source = staged_input
-                host_copyback_dest = host_file
 
         payload = {
-            "file_path": self.transport.map_path(payload_input_host),
+            "file_path": self.transport.map_path(host_file),
             "output_path": (
-                self.transport.map_path(payload_output_host) if payload_output_host else None
+                self.transport.map_path(host_output) if host_output is not None else None
             ),
             "visible": self.visible,
-            "stage_local": self.stage_local,
-            "log_path": self.transport.map_path(log_host),
             "command_groups": _normalize_command_groups(command_groups),
         }
 
-        script_host.write_text(PYTHON_RUNNER, encoding="utf-8")
-        payload_host.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
         try:
-            try:
-                completed = self.transport.run_python_file(
-                    self.transport.map_path(script_host),
-                    self.transport.map_path(payload_host),
-                    timeout=self.timeout,
-                )
-            except subprocess.TimeoutExpired as exc:
-                log_text = _read_text_if_exists(log_host)
-                raise RuntimeError(
-                    f"Visio desktop command timed out after {self.timeout} seconds.\n"
-                    f"Runner log:\n{log_text or '(no runner log written)'}"
-                ) from exc
-            data = _parse_runner_json(completed.stdout)
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    "Visio desktop command failed "
-                    f"(exit {completed.returncode}).\n"
-                    f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
-                )
-            if data and data.get("status") == "error":
-                raise RuntimeError(data.get("message") or "Visio desktop command failed.")
-            if host_copyback_source is not None and host_copyback_dest is not None:
-                shutil.copy2(host_copyback_source, host_copyback_dest)
-            return DesktopCommandResult(
-                returncode=completed.returncode,
-                stdout=completed.stdout,
-                stderr=completed.stderr,
-                data=data,
+            completed = self.transport.run_python_source(
+                PYTHON_RUNNER,
+                payload,
+                timeout=self.timeout,
             )
-        finally:
-            if not self.keep_artifacts:
-                for path in cleanup_paths:
-                    try:
-                        path.unlink()
-                    except FileNotFoundError:
-                        pass
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Visio desktop command timed out after {self.timeout} seconds."
+            ) from exc
+        data = _parse_runner_json(completed.stdout)
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "Visio desktop command failed "
+                f"(exit {completed.returncode}).\n"
+                f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+            )
+        if data and data.get("status") == "error":
+            raise RuntimeError(data.get("message") or "Visio desktop command failed.")
+        return DesktopCommandResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            data=data,
+        )
 
 
 def _parse_runner_json(stdout: str) -> dict[str, Any] | None:
@@ -431,13 +342,6 @@ def _parse_runner_json(stdout: str) -> dict[str, Any] | None:
         return json.loads(text[start:])
     except json.JSONDecodeError:
         return None
-
-
-def _read_text_if_exists(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        return ""
 
 
 def apply_desktop_command_groups(
@@ -520,14 +424,10 @@ from __future__ import annotations
 import json
 import math
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import traceback
-import uuid
 from datetime import datetime
-from pathlib import Path
 
 import pythoncom
 import win32com.client
@@ -547,14 +447,7 @@ VIS_OPEN_RW = 32
 
 
 def log_step(payload: dict, message: str) -> None:
-    log_path = payload.get("log_path")
-    if not log_path:
-        return
-    try:
-        with open(log_path, "a", encoding="utf-8") as handle:
-            handle.write(f"{datetime.now().isoformat()} {message}\n")
-    except Exception:
-        pass
+    print(f"{datetime.now().isoformat()} {message}", file=sys.stderr, flush=True)
 
 
 def write_result(status: str, message: str = "", results: list | None = None) -> None:
@@ -1043,12 +936,7 @@ def apply_instance_command(doc, cmd):
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        write_result("error", "Usage: runner.py <payload.json>")
-        return 2
-    payload_path = sys.argv[1]
-    with open(payload_path, "r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+    payload = json.load(sys.stdin)
 
     log_step(payload, "payload_loaded")
     pythoncom.CoInitialize()
@@ -1056,21 +944,10 @@ def main() -> int:
     app_pid = None
     doc = None
     results = []
-    local_input = None
-    local_output = None
     failed = False
     try:
         open_path = payload["file_path"]
         output_path = payload.get("output_path")
-        if payload.get("stage_local"):
-            input_ext = os.path.splitext(open_path)[1] or ".vsdx"
-            local_input = os.path.join(tempfile.gettempdir(), f"visio_bridge_in_{uuid.uuid4().hex}{input_ext}")
-            log_step(payload, f"copy_input_start {open_path} -> {local_input}")
-            shutil.copy2(open_path, local_input)
-            log_step(payload, f"copy_input_done {local_input}")
-            open_path = local_input
-            output_ext = os.path.splitext(output_path or payload["file_path"])[1] or input_ext
-            local_output = os.path.join(tempfile.gettempdir(), f"visio_bridge_out_{uuid.uuid4().hex}{output_ext}")
 
         log_step(payload, "create_app_start")
         app = win32com.client.DispatchEx("Visio.Application")
@@ -1101,26 +978,7 @@ def main() -> int:
                     raise ValueError(f"Unsupported executor: {executor}")
                 log_step(payload, f"command_done executor={executor} action={cmd.get('action')}")
 
-        if payload.get("stage_local"):
-            if output_path:
-                log_step(payload, f"save_as_start {local_output}")
-                doc.SaveAs(local_output)
-                log_step(payload, "save_as_done")
-                copy_source = local_output
-                copy_dest = output_path
-            else:
-                log_step(payload, "save_start")
-                doc.Save()
-                log_step(payload, "save_done")
-                copy_source = local_input
-                copy_dest = payload["file_path"]
-            log_step(payload, "close_start")
-            doc.Close()
-            doc = None
-            log_step(payload, f"copy_output_start {copy_source} -> {copy_dest}")
-            shutil.copy2(copy_source, copy_dest)
-            log_step(payload, "copy_output_done")
-        elif output_path:
+        if output_path:
             log_step(payload, f"save_as_start {output_path}")
             doc.SaveAs(output_path)
             log_step(payload, "save_as_done")
@@ -1147,12 +1005,6 @@ def main() -> int:
                 pass
             app = None
         terminate_process(app_pid)
-        for path in (local_input, local_output):
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
         pythoncom.CoUninitialize()
 
 

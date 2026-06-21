@@ -10,7 +10,7 @@
 - [示例 2：使用 `visio-symbol-editor` 编辑元器件符号](#示例-2使用-visio-symbol-editor-编辑元器件符号)
 - [示例 2b：重算页面实例的公式缓存](#示例-2b重算页面实例的公式缓存)
 - [示例 3：使用 `visio-doc-page-settings` 编辑文档与页面配置](#示例-3使用-visio-doc-page-settings-编辑文档与页面配置)
-- [示例 3b：二阶段默认使用 Visio 桌面端后端](#示例-3b二阶段默认使用-visio-桌面端后端)
+- [示例 3b：显式使用 Visio 桌面端后端](#示例-3b显式使用-visio-桌面端后端)
 - [示例 3c：XML 保存后刷新已打开的 Visio 文档](#示例-3cxml-保存后刷新已打开的-visio-文档)
 - [示例 4：使用 `design` 框架审计统一风格电路图](#示例-4使用-design-框架审计统一风格电路图)
 - [示例 5：使用 `visio-instance-manager` 管理形状实例](#示例-5使用-visio-instance-manager-管理形状实例)
@@ -60,12 +60,12 @@ shape_element = locator.find(shape_path)
 # 转换为 AI 易读的元器件数据
 skill_data = to_skill(shape_element)
 
-# 使用默认后端选择执行修改：优先 Visio API，不可用时回退 XML。
+# 使用显式配置的后端执行修改。
 commands = [
     {"action": "update_transform", "property": "Width", "formula": "0.75 in"},
     {"action": "add_connection_pin", "id": "99", "x": "Width*0.5", "y": "Height*0.2", "dir_x": "0", "dir_y": "-1"}
 ]
-apply_skill_commands(bridge, shape_path, commands)
+apply_skill_commands(bridge, shape_path, commands, backend="desktop")
 bridge.save("circuit_modified.vstx")
 ```
 
@@ -88,6 +88,7 @@ apply_skill_commands(
     [
         {"action": "update_transform", "property": "Width", "formula": "TheDoc!User.M*1.2"},
     ],
+    backend="desktop",
 )
 
 shape = ElementLocator(bridge).find(target)
@@ -113,20 +114,20 @@ bridge = VisioBridge("circuit.vstx")
 settings = to_settings_skill(bridge)
 print("全局及页面设置：", settings)
 
-# 使用默认后端选择执行配置命令：优先 Visio API，不可用时回退 XML。
+# 使用显式配置的后端执行配置命令。
 commands = [
     {"action": "update_doc_user_cell", "name": "AntiGravityScale", "value": "1.5", "unit": "IN"},
     {"action": "update_page_cell", "page": "Page-1", "property": "PageWidth", "formula": "12 in"}
 ]
-apply_settings_commands(bridge, commands)
+apply_settings_commands(bridge, commands, backend="desktop")
 bridge.save("circuit_settings_modified.vstx")
 ```
 
 ---
 
-## 示例 3b：二阶段默认使用 Visio 桌面端后端
+## 示例 3b：显式使用 Visio 桌面端后端
 
-阶段二入口默认使用 Visio 桌面端 COM（可用时），不可用时自动回退到 XML。
+阶段二入口必须显式传入与 `.visio_bridge.json` 匹配的 backend。
 
 ```python
 from visio_bridge import VisioBridge, apply_skill_commands, apply_settings_commands
@@ -141,7 +142,7 @@ apply_skill_commands(
         {"action": "update_text", "text": "NMOS"},
     ],
     output_path="circuit_desktop_modified.vstx",
-    # backend="auto" 是默认值：优先 Visio API，不可用时回退 XML。
+    backend="desktop",
 )
 
 modified = VisioBridge("circuit_desktop_modified.vstx")
@@ -151,9 +152,10 @@ apply_settings_commands(
         {"action": "update_doc_user_cell", "name": "M", "value": "1"},
     ],
     output_path="circuit_desktop_modified.vstx",
+    backend="desktop",
 )
 
-# 如需强制原 XML ZIP 后端：
+# 如需使用 XML ZIP 后端，.visio_bridge.json 也必须设置 "backend": "xml"：
 apply_settings_commands(
     modified,
     [{"action": "update_doc_user_cell", "name": "M", "value": "1"}],
@@ -257,7 +259,7 @@ commands = [
     },
 ]
 
-results = apply_instance_commands(bridge, commands)
+results = apply_instance_commands(bridge, commands, backend="desktop")
 print("结果:", results)
 bridge.save("circuit_instances_modified.vsdx")
 ```

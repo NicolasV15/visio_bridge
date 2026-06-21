@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,7 +20,6 @@ from .session import (
     DesktopTransport,
     create_default_transport,
     _parse_runner_json,
-    _read_text_if_exists,
 )
 
 
@@ -88,7 +86,7 @@ class VisioSessionManager:
 
         cfg = load_config()
         if mode is None:
-            mode = cfg.get("desktop_transport_mode", "auto")
+            mode = cfg.get("desktop_transport_mode")
         if vm_name is None:
             vm_name = cfg.get("vm_name")
 
@@ -111,22 +109,6 @@ class VisioSessionManager:
             if file_path is not None
             else Path.cwd() / "visio_bridge_session"
         )
-        artifact_dir_getter = getattr(self.transport, "artifact_dir", None)
-        artifact_dir = (
-            artifact_dir_getter(host_file)
-            if artifact_dir_getter is not None
-            else host_file.parent
-        )
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
-        run_id = uuid.uuid4().hex
-        script_host = artifact_dir / f".visio_bridge_session_{run_id}.py"
-        payload_host = artifact_dir / f".visio_bridge_session_{run_id}.json"
-        log_host = artifact_dir / f".visio_bridge_session_{run_id}.log"
-        cleanup_paths = [script_host, payload_host]
-        if not self.keep_artifacts:
-            cleanup_paths.append(log_host)
-
         mapped_file_path = self.transport.map_path(host_file) if file_path is not None else None
         payload = {
             "action": action,
@@ -135,51 +117,34 @@ class VisioSessionManager:
             "activate": activate,
             "save": save,
             "discard_unsaved": discard_unsaved,
-            "log_path": self.transport.map_path(log_host),
         }
 
-        script_host.write_text(PYTHON_SESSION_RUNNER, encoding="utf-8")
-        payload_host.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
         try:
-            try:
-                completed = self.transport.run_python_file(
-                    self.transport.map_path(script_host),
-                    self.transport.map_path(payload_host),
-                    timeout=self.timeout,
-                )
-            except subprocess.TimeoutExpired as exc:
-                log_text = _read_text_if_exists(log_host)
-                raise RuntimeError(
-                    f"Visio session command timed out after {self.timeout} seconds.\n"
-                    f"Runner log:\n{log_text or '(no runner log written)'}"
-                ) from exc
-
-            data = _parse_runner_json(completed.stdout)
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    "Visio session command failed "
-                    f"(exit {completed.returncode}).\n"
-                    f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
-                )
-            if data and data.get("status") == "error":
-                raise RuntimeError(data.get("message") or "Visio session command failed.")
-            return DesktopCommandResult(
-                returncode=completed.returncode,
-                stdout=completed.stdout,
-                stderr=completed.stderr,
-                data=data,
+            completed = self.transport.run_python_source(
+                PYTHON_SESSION_RUNNER,
+                payload,
+                timeout=self.timeout,
             )
-        finally:
-            if not self.keep_artifacts:
-                for path in cleanup_paths:
-                    try:
-                        path.unlink()
-                    except FileNotFoundError:
-                        pass
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Visio session command timed out after {self.timeout} seconds."
+            ) from exc
+
+        data = _parse_runner_json(completed.stdout)
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "Visio session command failed "
+                f"(exit {completed.returncode}).\n"
+                f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+            )
+        if data and data.get("status") == "error":
+            raise RuntimeError(data.get("message") or "Visio session command failed.")
+        return DesktopCommandResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            data=data,
+        )
 
 
 def _manager_from_kwargs(
@@ -365,14 +330,7 @@ VIS_OPEN_RW = 32
 
 
 def log_step(payload: dict, message: str) -> None:
-    log_path = payload.get("log_path")
-    if not log_path:
-        return
-    try:
-        with open(log_path, "a", encoding="utf-8") as handle:
-            handle.write(f"{datetime.now().isoformat()} {message}\n")
-    except Exception:
-        pass
+    print(f"{datetime.now().isoformat()} {message}", file=sys.stderr, flush=True)
 
 
 def write_result(result_status: str, message: str = "", **fields) -> None:
@@ -503,12 +461,7 @@ def close_document(doc, save=False, discard_unsaved=False):
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        write_result("error", "Usage: session_runner.py <payload.json>")
-        return 2
-    payload_path = sys.argv[1]
-    with open(payload_path, "r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+    payload = json.load(sys.stdin)
 
     pythoncom.CoInitialize()
     try:
