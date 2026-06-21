@@ -69,6 +69,43 @@ This generates a `.visio_bridge.json` file in the current working directory:
 
 Agents should read `visio_bridge.json` or `.visio_bridge.json` if present to respect the user's customized default settings.
 
+### 2.2 Desktop Session Prerequisites (Windows / Parallels)
+
+Visio Desktop session control (`open_visio_file()`, `refresh_visio_file()`, etc.) has extra runtime prerequisites beyond the pure XML backend:
+
+- The configured Parallels VM must be running.
+- The Windows guest must have a real Python interpreter callable as `python` (the Windows Store alias alone is not sufficient).
+- The Windows guest must have `pywin32` installed so the runner can import `pythoncom` and `win32com.client`.
+- Parallels shared folders must expose the macOS home directory to the guest as `\\Mac\Home`.
+
+Recommended verification commands:
+
+```bash
+prlctl list --all
+prlctl exec "<VM name>" --current-user cmd /c python --version
+prlctl exec "<VM name>" --current-user cmd /c python -c "import pythoncom, win32com.client; print('ok')"
+```
+
+If `python --version` fails, install Python inside the Windows guest:
+
+```bash
+prlctl exec "<VM name>" --current-user cmd /c winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements
+```
+
+If `import pythoncom` fails, install `pywin32` inside the Windows guest:
+
+```bash
+prlctl exec "<VM name>" --current-user cmd /c python -m pip install pywin32
+```
+
+To verify that the guest can actually see a host file path through Parallels sharing, test the mapped UNC path directly from the Windows guest:
+
+```bash
+prlctl exec "<VM name>" --current-user cmd /c python -c "import os; print(os.path.exists(r'\\\\Mac\\Home\\Documents\\path\\to\\file.vstx'))"
+```
+
+Agents should run these checks when Desktop session control unexpectedly fails before assuming the Visio file itself is broken.
+
 ---
 
 ## 3. Intent → SKILL Dispatch Table
@@ -372,6 +409,7 @@ refresh_visio_file("circuit_modified.vsdx")
 - The default refresh policy is `discard_unsaved=True`, so unsaved edits made in the Visio UI are intentionally discarded to show the latest file on disk.
 - These helpers do not run shape/page/instance commands. Use the matching `apply_*` API first, save the file, then call `refresh_visio_file()` if the user has that file open in Visio.
 - After saving a modified file, use `find_visio_document(output_path)` when Desktop transport is available. If it is already open, ask the user whether to refresh it; if it is not open, ask whether to open it. Do not refresh/open silently unless explicitly requested.
+- On macOS + Parallels, the session runner opens files by mapping host paths below the macOS home directory to `\\Mac\Home\...` inside the Windows guest. If opening a file fails with "file not found", verify the mapped UNC path is accessible from the guest before changing the Visio command flow.
 
 ---
 
@@ -436,6 +474,9 @@ Common failure modes:
 | `locator.find(...)` returns `None` | Wrong NameU or ID | Call `bridge.parts_manifest()` to list valid paths |
 | `ValueError: Could not find Master matching reference` | Master NameU typo | Check `parts_manifest()["masters"]` for correct names |
 | `backend="desktop"` raises | No Visio COM / no Parallels | Switch to `backend="xml"` |
+| `Visio session command failed (exit 255)` | Windows guest `python` is missing or not callable | Install real Python in the Windows VM and verify `python --version` via `prlctl exec ... cmd /c python --version` |
+| `ModuleNotFoundError: No module named 'pythoncom'` | `pywin32` missing in the Windows guest | Run `python -m pip install pywin32` in the Windows VM |
+| `pywintypes.com_error ... 文件未找到` / `file not found` while opening in Visio | The mapped `\\Mac\Home\...` path is not accessible from the Windows guest | Verify the UNC path with `os.path.exists(...)` inside the guest; if needed, move/copy the file to a guest-visible path and retry |
 | Saved file won't open in Visio | Formula syntax error in a command | Re-read with `to_skill()` and inspect the written cell |
 
 ---

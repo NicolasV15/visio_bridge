@@ -23,6 +23,38 @@ from visio_bridge import (
 )
 ```
 
+## Environment Checklist
+
+Before using this skill on macOS + Parallels, verify the Desktop session
+environment, not just the Visio file:
+
+- The configured Parallels VM is running.
+- The Windows guest has a real Python interpreter callable as `python`.
+- The Windows guest has `pywin32` installed so the runner can import
+  `pythoncom` and `win32com.client`.
+- Parallels shared folders expose the macOS home directory as `\\Mac\Home`.
+
+Recommended checks:
+
+```bash
+prlctl list --all
+prlctl exec "<VM name>" --current-user cmd /c python --version
+prlctl exec "<VM name>" --current-user cmd /c python -c "import pythoncom, win32com.client; print('ok')"
+prlctl exec "<VM name>" --current-user cmd /c python -c "import os; print(os.path.exists(r'\\\\Mac\\Home\\Documents\\path\\to\\file.vstx'))"
+```
+
+If `python --version` fails, install Python inside the Windows guest:
+
+```bash
+prlctl exec "<VM name>" --current-user cmd /c winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements
+```
+
+If `import pythoncom` fails, install `pywin32` inside the Windows guest:
+
+```bash
+prlctl exec "<VM name>" --current-user cmd /c python -m pip install pywin32
+```
+
 ## Actions
 
 ### List Open Documents
@@ -86,6 +118,11 @@ print(result.status)
 default it uses `discard_unsaved=True`, so unsaved changes made in the Visio UI
 are discarded and the reopened document reflects the current file on disk.
 
+On macOS + Parallels, these helpers open host files by mapping paths below the
+macOS home directory to `\\Mac\Home\...` inside the Windows guest. If Visio
+reports "file not found", verify the mapped UNC path from the guest before
+assuming the document or the API call is invalid.
+
 ### Post-Save Prompt Pattern
 
 After a modification task saves an output Visio file, detect whether that file
@@ -118,3 +155,9 @@ current task.
 6. After saving a modified Visio file, it is appropriate to detect the session
    state and ask whether to refresh an already-open document or open a closed
    document; do not do either silently.
+7. If the session runner fails with `exit 255`, check whether `python` is
+   actually callable inside the Windows guest before debugging Visio itself.
+8. If the runner raises `ModuleNotFoundError: No module named 'pythoncom'`,
+   install `pywin32` in the guest.
+9. If Visio raises "file not found", verify `\\Mac\Home\...` accessibility from
+   the Windows guest before changing the open/refresh flow.
