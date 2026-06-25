@@ -12,6 +12,8 @@
 - [示例 3：使用 `visio-doc-page-settings` 编辑文档与页面配置](#示例-3使用-visio-doc-page-settings-编辑文档与页面配置)
 - [示例 3b：显式使用 Visio 桌面端后端](#示例-3b显式使用-visio-桌面端后端)
 - [示例 3c：XML 保存后刷新已打开的 Visio 文档](#示例-3cxml-保存后刷新已打开的-visio-文档)
+- [示例 3d：从保存后的文件导出 PDF](#示例-3d从保存后的文件导出-pdf)
+- [示例 3e：一次 desktop 运行同时保存并导出 PDF](#示例-3e一次-desktop-运行同时保存并导出-pdf)
 - [示例 4：使用 `design` 框架审计统一风格电路图](#示例-4使用-design-框架审计统一风格电路图)
 - [示例 5：使用 `visio-instance-manager` 管理形状实例](#示例-5使用-visio-instance-manager-管理形状实例)
 
@@ -191,6 +193,52 @@ if find_visio_document(path) is not None:
     # 默认行为会丢弃 Visio UI 中未保存的编辑，然后关闭并重新打开文档，
     # 使 Visio 显示磁盘上的最新文件内容。
     refresh_visio_file(path)
+```
+
+---
+
+## 示例 3d：从保存后的文件导出 PDF
+
+使用 desktop backend 直接从磁盘上的文件导出稳定 PDF。
+
+```python
+from visio_bridge import VisioPdfExportOptions, export_visio_pdf
+
+export_visio_pdf("circuit_modified.vsdx", "circuit_modified.pdf")
+
+export_visio_pdf(
+    "circuit_modified.vsdx",
+    "circuit_page_1.pdf",
+    options=VisioPdfExportOptions(
+        page_range="current_page",
+        page="Page-1",
+        color_as_black=True,
+        pdfa=True,
+    ),
+)
+```
+
+---
+
+## 示例 3e：一次 desktop 运行同时保存并导出 PDF
+
+desktop 写入调用支持 `pdf_output_path` 和 `pdf_options`，因此一次 Visio
+desktop 运行即可同时保存修改后的文档并导出 PDF。
+
+```python
+from visio_bridge import VisioBridge, VisioPdfExportOptions, apply_skill_commands
+
+bridge = VisioBridge("circuit.vstx")
+
+apply_skill_commands(
+    bridge,
+    "masters/NMOS4/shape/5",
+    [{"action": "update_text", "text": "NMOS"}],
+    output_path="circuit_desktop_modified.vstx",
+    pdf_output_path="circuit_desktop_modified.pdf",
+    pdf_options=VisioPdfExportOptions(page_range="all", intent="print"),
+    backend="desktop",
+)
 ```
 
 ---

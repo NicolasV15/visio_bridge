@@ -13,8 +13,9 @@ import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
+from .pdf_export import VisioPdfExportOptions, VisioPdfExportResult
 from .session import (
     DesktopCommandResult,
     DesktopTransport,
@@ -99,6 +100,8 @@ class VisioSessionManager:
         action: str,
         *,
         file_path: str | os.PathLike[str] | None = None,
+        output_pdf_path: str | os.PathLike[str] | None = None,
+        pdf_options: VisioPdfExportOptions | Mapping[str, Any] | None = None,
         visible: bool = True,
         activate: bool = True,
         save: bool = False,
@@ -110,9 +113,23 @@ class VisioSessionManager:
             else Path.cwd() / "visio_bridge_session"
         )
         mapped_file_path = self.transport.map_path(host_file) if file_path is not None else None
+        host_pdf_output = Path(output_pdf_path).expanduser() if output_pdf_path is not None else None
+        if pdf_options is not None and host_pdf_output is None:
+            raise ValueError("output_pdf_path is required when pdf_options is provided.")
+        pdf_payload = None
+        if host_pdf_output is not None:
+            pdf_payload = VisioPdfExportOptions.from_value(pdf_options).to_payload(
+                source="open_document"
+            )
         payload = {
             "action": action,
             "file_path": mapped_file_path,
+            "pdf_output_path": (
+                self.transport.map_path(host_pdf_output)
+                if host_pdf_output is not None
+                else None
+            ),
+            "pdf_options": pdf_payload,
             "visible": visible,
             "activate": activate,
             "save": save,
@@ -313,6 +330,39 @@ def refresh_visio_file(
     return VisioSessionActionResult.from_dict(result.data or {})
 
 
+def export_open_document_pdf(
+    file_path: str | os.PathLike[str],
+    output_pdf_path: str | os.PathLike[str],
+    *,
+    options: VisioPdfExportOptions | Mapping[str, Any] | None = None,
+    visible: bool = True,
+    activate: bool = True,
+    session: VisioSessionManager | None = None,
+    mode: str | None = None,
+    vm_name: str | None = None,
+    timeout: int | None = None,
+    keep_artifacts: bool = False,
+) -> VisioPdfExportResult:
+    """Export an already-open Visio document to PDF using the current UI state."""
+
+    runner = _manager_from_kwargs(
+        session=session,
+        mode=mode,
+        vm_name=vm_name,
+        timeout=timeout,
+        keep_artifacts=keep_artifacts,
+    )
+    result = runner.run(
+        "export_pdf",
+        file_path=file_path,
+        output_pdf_path=output_pdf_path,
+        pdf_options=options,
+        visible=visible,
+        activate=activate,
+    )
+    return VisioPdfExportResult.from_dict(result.data or {})
+
+
 PYTHON_SESSION_RUNNER = r'''
 from __future__ import annotations
 
@@ -327,6 +377,14 @@ import win32com.client
 
 
 VIS_OPEN_RW = 32
+VIS_FIXED_FORMAT_PDF = 1
+VIS_DOC_EX_INTENT_SCREEN = 0
+VIS_DOC_EX_INTENT_PRINT = 1
+VIS_PRINT_ALL = 0
+VIS_PRINT_FROM_TO = 1
+VIS_PRINT_CURRENT_PAGE = 2
+VIS_PRINT_SELECTION = 3
+VIS_PRINT_CURRENT_VIEW = 4
 
 
 def log_step(payload: dict, message: str) -> None:
@@ -460,6 +518,36 @@ def close_document(doc, save=False, discard_unsaved=False):
     doc.Close()
 
 
+def export_document_pdf(doc, output_pdf_path, options):
+    if not output_pdf_path:
+        raise ValueError("output_pdf_path is required for export_pdf.")
+    options = options or {}
+    intent = str(options.get("intent", "print")).strip().lower()
+    page_range = str(options.get("page_range", "all")).strip().lower()
+    intent_code = VIS_DOC_EX_INTENT_PRINT if intent == "print" else VIS_DOC_EX_INTENT_SCREEN
+    range_code = {
+        "all": VIS_PRINT_ALL,
+        "from_to": VIS_PRINT_FROM_TO,
+        "current_page": VIS_PRINT_CURRENT_PAGE,
+        "selection": VIS_PRINT_SELECTION,
+        "current_view": VIS_PRINT_CURRENT_VIEW,
+    }[page_range]
+    doc.ExportAsFixedFormat(
+        VIS_FIXED_FORMAT_PDF,
+        output_pdf_path,
+        intent_code,
+        range_code,
+        int(options.get("from_page", 1)),
+        int(options.get("to_page", -1)),
+        bool(options.get("color_as_black", False)),
+        bool(options.get("include_background", True)),
+        bool(options.get("include_document_properties", True)),
+        bool(options.get("include_structure_tags", True)),
+        bool(options.get("pdfa", False)),
+        None,
+    )
+
+
 def main() -> int:
     payload = json.load(sys.stdin)
 
@@ -485,6 +573,13 @@ def main() -> int:
             if action == "find":
                 write_result("ok", document=None)
                 return 0
+            if action == "export_pdf":
+                write_result(
+                    "error",
+                    "Visio is not running, so source='open_document' export is unavailable.",
+                    action="export_pdf",
+                )
+                return 1
             write_result("ok", action=action, status="not_found", message="Visio is not running.")
             return 0
 
@@ -528,6 +623,28 @@ def main() -> int:
                 status = "opened"
             doc = open_document(app, file_path, activate=activate)
             write_result("ok", action="refresh", status=status, document=document_info(app, doc))
+            return 0
+
+        if action == "export_pdf":
+            doc = find_document(app, file_path)
+            if doc is None:
+                write_result(
+                    "error",
+                    f"Document is not open in Visio: {file_path}",
+                    action="export_pdf",
+                )
+                return 1
+            if activate:
+                activate_document(doc)
+            export_document_pdf(doc, payload.get("pdf_output_path"), payload.get("pdf_options") or {})
+            write_result(
+                "ok",
+                action="export_pdf",
+                export_status="exported",
+                output_pdf_path=str(payload.get("pdf_output_path") or ""),
+                source="open_document",
+                document=document_info(app, doc),
+            )
             return 0
 
         raise ValueError(f"Unsupported Visio session action: {action}")

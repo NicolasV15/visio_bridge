@@ -1,17 +1,21 @@
 ---
 name: visio-session-manager
-description: Manage Microsoft Visio Desktop sessions through the Visio Bridge Desktop COM transport. Use for 会话, 打开, 关闭, 刷新, reload, session, list open Visio documents, open in Visio, close in Visio, refresh after disk modification, or Parallels Desktop troubleshooting.
+description: Manage Microsoft Visio Desktop sessions through the Visio Bridge Desktop COM transport. Use for 会话, 打开, 关闭, 刷新, reload, session, list open Visio documents, open in Visio, close in Visio, refresh after disk modification, export PDF through Visio, or Parallels Desktop troubleshooting.
 ---
 
 # Visio Session Manager
 
 Use this skill only for Microsoft Visio Desktop session control. It does not
 read or write raw XML and does not apply shape, page, or instance commands.
+It also covers desktop PDF export, because PDF output depends on the real Visio
+rendering engine rather than XML mutation.
 
 ## Public API
 
 ```python
 from visio_bridge import (
+    VisioPdfExportOptions,
+    export_visio_pdf,
     list_visio_documents,
     find_visio_document,
     open_visio_file,
@@ -64,6 +68,37 @@ print(result.status)
 `refresh_visio_file()` closes and reopens the file. By default it discards
 unsaved Visio UI changes, so warn the user unless they already requested that
 behavior.
+
+Export a stable PDF from the saved file on disk:
+
+```python
+result = export_visio_pdf("input_modified.vsdx", "input_modified.pdf")
+print(result.status, result.output_pdf_path)
+```
+
+Export the current Visio UI view from an already-open document:
+
+```python
+result = export_visio_pdf(
+    "input_modified.vsdx",
+    "input_current_view.pdf",
+    source="open_document",
+    options=VisioPdfExportOptions(page_range="current_view", intent="screen"),
+)
+print(result.status, result.output_pdf_path)
+```
+
+PDF option notes:
+
+- `source="saved_file"` is the stable default. It opens the file from disk in
+  an isolated Visio run.
+- `source="open_document"` requires the document to already be open in Visio
+  and uses the current UI state for `current_page`, `selection`, and
+  `current_view`.
+- Supported `page_range` values are `all`, `from_to`, `current_page`,
+  `selection`, and `current_view`.
+- In saved-file mode, `current_page` requires `page`, `selection` requires
+  `selection_shape_paths`, and `current_view` is not supported.
 
 ## Post-Save Pattern
 

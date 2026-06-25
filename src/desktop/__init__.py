@@ -1,5 +1,10 @@
 """Optional Visio desktop automation backend."""
 
+from .pdf_export import (
+    VisioPdfExportOptions,
+    VisioPdfExportResult,
+    export_visio_pdf,
+)
 from .session import (
     DesktopCommandResult,
     LocalWindowsTransport,
@@ -10,6 +15,7 @@ from .session import (
     apply_settings_commands_desktop,
     apply_skill_commands_desktop,
     create_default_transport,
+    export_pdf_desktop,
     mac_path_to_parallels_unc,
 )
 from .session_control import (
@@ -17,6 +23,7 @@ from .session_control import (
     VisioSessionActionResult,
     VisioSessionManager,
     close_visio_file,
+    export_open_document_pdf,
     find_visio_document,
     list_visio_documents,
     open_visio_file,
@@ -28,6 +35,8 @@ __all__ = [
     "LocalWindowsTransport",
     "ParallelsTransport",
     "VisioDocumentSessionInfo",
+    "VisioPdfExportOptions",
+    "VisioPdfExportResult",
     "VisioDesktopSession",
     "VisioSessionActionResult",
     "VisioSessionManager",
@@ -37,6 +46,9 @@ __all__ = [
     "apply_skill_commands_desktop",
     "close_visio_file",
     "create_default_transport",
+    "export_open_document_pdf",
+    "export_pdf_desktop",
+    "export_visio_pdf",
     "find_visio_document",
     "list_visio_documents",
     "mac_path_to_parallels_unc",

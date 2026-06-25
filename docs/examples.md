@@ -12,6 +12,8 @@
 - [Example 3: Edit Document & Page Settings with `visio-doc-page-settings`](#example-3-edit-document--page-settings-with-visio-doc-page-settings)
 - [Example 3b: Use Visio Desktop Backend by Default](#example-3b-use-visio-desktop-backend-by-default)
 - [Example 3c: Refresh an Open Visio Document After XML Save](#example-3c-refresh-an-open-visio-document-after-xml-save)
+- [Example 3d: Export a Saved File to PDF](#example-3d-export-a-saved-file-to-pdf)
+- [Example 3e: Save and Export PDF in One Desktop Run](#example-3e-save-and-export-pdf-in-one-desktop-run)
 - [Example 4: Audit Circuit Diagrams with `design` Framework](#example-4-audit-circuit-diagrams-with-design-framework)
 - [Example 5: Manage Shape Instances with `visio-instance-manager`](#example-5-manage-shape-instances-with-visio-instance-manager)
 
@@ -193,6 +195,52 @@ if find_visio_document(path) is not None:
     # Default behavior discards unsaved edits made in the Visio UI, then
     # closes and reopens the document so Visio reflects the latest disk file.
     refresh_visio_file(path)
+```
+
+---
+
+## Example 3d: Export a Saved File to PDF
+
+Use the desktop backend to export a stable PDF directly from the file on disk.
+
+```python
+from visio_bridge import VisioPdfExportOptions, export_visio_pdf
+
+export_visio_pdf("circuit_modified.vsdx", "circuit_modified.pdf")
+
+export_visio_pdf(
+    "circuit_modified.vsdx",
+    "circuit_page_1.pdf",
+    options=VisioPdfExportOptions(
+        page_range="current_page",
+        page="Page-1",
+        color_as_black=True,
+        pdfa=True,
+    ),
+)
+```
+
+---
+
+## Example 3e: Save and Export PDF in One Desktop Run
+
+Desktop write calls accept `pdf_output_path` and `pdf_options`, so one Visio
+desktop run can both save the modified document and export a PDF.
+
+```python
+from visio_bridge import VisioBridge, VisioPdfExportOptions, apply_skill_commands
+
+bridge = VisioBridge("circuit.vstx")
+
+apply_skill_commands(
+    bridge,
+    "masters/NMOS4/shape/5",
+    [{"action": "update_text", "text": "NMOS"}],
+    output_path="circuit_desktop_modified.vstx",
+    pdf_output_path="circuit_desktop_modified.pdf",
+    pdf_options=VisioPdfExportOptions(page_range="all", intent="print"),
+    backend="desktop",
+)
 ```
 
 ---

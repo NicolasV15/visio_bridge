@@ -1,6 +1,6 @@
 ---
 name: visio-instance-manager
-description: Add, copy, or delete Visio shape instances through instance_manager commands. Use for 添加形状, 复制, 删除形状, add shape, drop master, copy shape, duplicate instance, delete instance, or place components on a page or inside a group.
+description: Add, copy, delete, group, or ungroup Visio shape instances through instance_manager commands. Use for 添加形状, 复制, 删除形状, 组合, 取消组合, add shape, drop master, copy shape, duplicate instance, delete instance, group, ungroup, or place components on a page or inside a group.
 ---
 
 # Visio Instance Manager
@@ -47,6 +47,8 @@ explicitly confirms overwriting.
 | `add_instance` | `parent`, `master`, `x`, `y` | `width`, `height`, `angle` | Drops a master into a page or group |
 | `copy_instance` | `shape_path`, `x`, `y` | none | Deep-clones an existing instance with new IDs |
 | `delete_instance` | `shape_path` | none | Removes the target shape and descendants |
+| `ungroup` | `shape_path` | none | Ungroups one direct group shape into its parent container |
+| `group` | `shape_paths` | none | Groups two or more direct sibling shapes under a new wrapper group |
 
 ## Examples
 
@@ -80,5 +82,21 @@ Delete an instance:
 ```json
 [
   {"action": "delete_instance", "shape_path": "pages/Page-1/shape/42"}
+]
+```
+
+Ungroup a nested group:
+
+```json
+[
+  {"action": "ungroup", "shape_path": "masters/NMOS_B/shape/5/shape/6"}
+]
+```
+
+Group two sibling shapes:
+
+```json
+[
+  {"action": "group", "shape_paths": ["masters/NMOS/shape/5/shape/7", "masters/NMOS/shape/5/shape/8"]}
 ]
 ```

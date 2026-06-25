@@ -122,6 +122,8 @@ Desktop 传输层也提供管理用户当前 Visio 实例的辅助 API：
 
 ```python
 from visio_bridge import (
+    VisioPdfExportOptions,
+    export_visio_pdf,
     list_visio_documents,
     open_visio_file,
     close_visio_file,
@@ -134,9 +136,57 @@ open_visio_file("circuit_modified.vsdx")
 # XML 后端保存后，关闭并重新打开 Visio 中匹配的文档。
 # 默认刷新行为会丢弃 Visio UI 中尚未保存的编辑。
 refresh_visio_file("circuit_modified.vsdx")
+
+# 从磁盘上的稳定文件导出 PDF。
+export_visio_pdf("circuit_modified.vsdx", "circuit_modified.pdf")
+
+# 从保存后的文件导出指定页面。
+export_visio_pdf(
+    "circuit_modified.vsdx",
+    "circuit_page1.pdf",
+    options=VisioPdfExportOptions(page_range="current_page", page="Page-1"),
+)
 ```
 
 `refresh_visio_file()` 通过关闭并重新打开文件实现，因为 Visio 没有针对已打开 Open XML 文档的通用原地 reload API。默认使用 `discard_unsaved=True`，因此重新打开后会显示磁盘上的最新文件内容。
+
+### 桌面端 PDF 导出
+
+需要通过真实 Visio 渲染引擎生成 PDF 时，使用 `export_visio_pdf()`。
+
+```python
+from visio_bridge import VisioPdfExportOptions, export_visio_pdf
+
+# 文件态导出：从磁盘文件启动独立 Visio 运行导出。
+export_visio_pdf("circuit_modified.vsdx", "circuit_modified.pdf")
+
+# 导出指定页范围。
+export_visio_pdf(
+    "circuit_modified.vsdx",
+    "circuit_pages_2_4.pdf",
+    options=VisioPdfExportOptions(page_range="from_to", from_page=2, to_page=4),
+)
+
+# 对已经在 Visio 中打开的文档，导出当前 UI 视图。
+export_visio_pdf(
+    "circuit_modified.vsdx",
+    "circuit_current_view.pdf",
+    source="open_document",
+    options=VisioPdfExportOptions(page_range="current_view", intent="screen"),
+)
+```
+
+支持的 PDF 选项包括：
+- `intent="print"` 或 `"screen"`
+- `page_range="all"`、`"from_to"`、`"current_page"`、`"selection"`、`"current_view"`
+- `color_as_black`、`include_background`、`include_document_properties`、`include_structure_tags`、`pdfa`
+
+文件态导出支持 `all`、`from_to`、`current_page`（必须提供 `page`）
+和 `selection`（必须提供 `selection_shape_paths`）。`current_view`
+只支持 `source="open_document"`，因为它依赖当前 Visio 窗口状态。
+
+现有 `apply_*` desktop 写入调用也支持 `pdf_output_path=` 与
+`pdf_options=`，因此一次 desktop 运行即可同时保存修改后的 Visio 文件并导出 PDF。
 
 ### 🤖 AI Agent 接入与指南
 
@@ -158,7 +208,7 @@ Visio Bridge 从设计之初就充分考虑了 AI 自动化的需求。我们提
 | 文档与页面设置 | [`skills/visio-doc-page-settings/SKILL.md`](skills/visio-doc-page-settings/SKILL.md) | `apply_settings_commands()` |
 | 只读文件诊断器 | [`skills/visio-file-inspector/SKILL.md`](skills/visio-file-inspector/SKILL.md) | *（只读，无需 apply）* |
 | 形状实例管理器 | [`skills/visio-instance-manager/SKILL.md`](skills/visio-instance-manager/SKILL.md) | `apply_instance_commands()` |
-| Visio 桌面端会话管理器 | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` |
+| Visio 桌面端会话管理器 | [`skills/visio-session-manager/SKILL.md`](skills/visio-session-manager/SKILL.md) | `list_visio_documents()` / `refresh_visio_file()` / `export_visio_pdf()` |
 | 设计规则审计员 | [`skills/visio-design-rules/SKILL.md`](skills/visio-design-rules/SKILL.md) | `plan_design_commands()` |
 
 ### Codex Skill 安装与更新
@@ -267,6 +317,8 @@ python scripts/update_codex_skills.py --skills visio-file-inspector visio-symbol
 | `add_instance` | 在页面或组容器中创建新的 Master 形状实例 |
 | `copy_instance` | 将已有形状实例克隆到新位置 |
 | `delete_instance` | 删除形状实例及其所有后代元素 |
+| `ungroup` | 对一个直接组形状执行取消组合并提升到父容器 |
+| `group` | 将两个或更多直接同级形状组合成新的包装组 |
 
 #### 4. 文件诊断器（`visio-file-inspector`）
 
@@ -327,12 +379,15 @@ python scripts/update_codex_skills.py --skills visio-file-inspector visio-symbol
 | `VisioDesktopSession` | `from visio_bridge import VisioDesktopSession` | Visio COM 自动化会话管理器 |
 | `VisioSessionManager` | `from visio_bridge import VisioSessionManager` | 执行 Visio 桌面端会话控制动作 |
 | `VisioDocumentSessionInfo` | `from visio_bridge import VisioDocumentSessionInfo` | 已打开文档的会话元数据 |
+| `VisioPdfExportOptions` | `from visio_bridge import VisioPdfExportOptions` | desktop backend 的用户侧 PDF 导出选项 |
+| `VisioPdfExportResult` | `from visio_bridge import VisioPdfExportResult` | desktop PDF 导出辅助函数的返回结果 |
 | `VisioSessionActionResult` | `from visio_bridge import VisioSessionActionResult` | 打开/关闭/刷新动作结果 |
 | `list_visio_documents()` | `from visio_bridge import list_visio_documents` | 列出 Visio 桌面端当前打开的文档 |
 | `find_visio_document(path)` | `from visio_bridge import find_visio_document` | 按路径查找已打开的 Visio 文档 |
 | `open_visio_file(path)` | `from visio_bridge import open_visio_file` | 在 Visio 中打开文件；若已打开则激活 |
 | `close_visio_file(path)` | `from visio_bridge import close_visio_file` | 关闭已打开的 Visio 文档，默认拒绝关闭有未保存 UI 修改的文档 |
 | `refresh_visio_file(path)` | `from visio_bridge import refresh_visio_file` | 关闭并重开文件，使 Visio 显示磁盘上的最新内容 |
+| `export_visio_pdf(path, output_pdf_path, ...)` | `from visio_bridge import export_visio_pdf` | 通过 desktop backend 将文档导出为 PDF，可从磁盘文件或已打开的 Visio 文档导出 |
 | `ParallelsTransport` | `from visio_bridge import ParallelsTransport` | macOS → Windows VM 传输层（Parallels） |
 | `LocalWindowsTransport` | `from visio_bridge import LocalWindowsTransport` | 原生 Windows 传输层 |
 | `create_default_transport()` | `from visio_bridge import create_default_transport` | 根据显式配置创建传输层 |

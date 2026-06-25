@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, Mapping, Sequence
 
+from .pdf_export import VisioPdfExportOptions, VisioPdfExportResult
+
 
 @dataclass
 class DesktopCommandResult:
@@ -291,15 +293,31 @@ class VisioDesktopSession:
         command_groups: Mapping[str, Any] | Sequence[Mapping[str, Any]],
         *,
         output_path: str | os.PathLike[str] | None = None,
+        pdf_output_path: str | os.PathLike[str] | None = None,
+        pdf_options: VisioPdfExportOptions | Mapping[str, Any] | None = None,
     ) -> DesktopCommandResult:
         host_file = Path(file_path).expanduser()
         host_output = Path(output_path).expanduser() if output_path else None
+        host_pdf_output = Path(pdf_output_path).expanduser() if pdf_output_path else None
+        if pdf_options is not None and host_pdf_output is None:
+            raise ValueError("pdf_output_path is required when pdf_options is provided.")
+        pdf_payload = None
+        if host_pdf_output is not None:
+            pdf_payload = VisioPdfExportOptions.from_value(pdf_options).to_payload(
+                source="saved_file"
+            )
 
         payload = {
             "file_path": self.transport.map_path(host_file),
             "output_path": (
                 self.transport.map_path(host_output) if host_output is not None else None
             ),
+            "pdf_output_path": (
+                self.transport.map_path(host_pdf_output)
+                if host_pdf_output is not None
+                else None
+            ),
+            "pdf_options": pdf_payload,
             "visible": self.visible,
             "command_groups": _normalize_command_groups(command_groups),
         }
@@ -330,6 +348,21 @@ class VisioDesktopSession:
             data=data,
         )
 
+    def export_pdf(
+        self,
+        file_path: str | os.PathLike[str],
+        output_pdf_path: str | os.PathLike[str],
+        *,
+        options: VisioPdfExportOptions | Mapping[str, Any] | None = None,
+    ) -> VisioPdfExportResult:
+        result = self.run(
+            file_path,
+            [],
+            pdf_output_path=output_pdf_path,
+            pdf_options=options,
+        )
+        return VisioPdfExportResult.from_dict(result.data or {})
+
 
 def _parse_runner_json(stdout: str) -> dict[str, Any] | None:
     text = stdout.strip()
@@ -349,6 +382,8 @@ def apply_desktop_command_groups(
     command_groups: Mapping[str, Any] | Sequence[Mapping[str, Any]],
     *,
     output_path: str | os.PathLike[str] | None = None,
+    pdf_output_path: str | os.PathLike[str] | None = None,
+    pdf_options: VisioPdfExportOptions | Mapping[str, Any] | None = None,
     session: VisioDesktopSession | None = None,
     mode: str | None = None,
     vm_name: str | None = None,
@@ -363,7 +398,35 @@ def apply_desktop_command_groups(
         visible=visible,
         stage_local=stage_local,
     )
-    return runner.run(file_path, command_groups, output_path=output_path)
+    return runner.run(
+        file_path,
+        command_groups,
+        output_path=output_path,
+        pdf_output_path=pdf_output_path,
+        pdf_options=pdf_options,
+    )
+
+
+def export_pdf_desktop(
+    file_path: str | os.PathLike[str],
+    output_pdf_path: str | os.PathLike[str],
+    *,
+    options: VisioPdfExportOptions | Mapping[str, Any] | None = None,
+    session: VisioDesktopSession | None = None,
+    mode: str | None = None,
+    vm_name: str | None = None,
+    timeout: int | None = None,
+    visible: bool | None = None,
+    stage_local: bool | None = None,
+) -> VisioPdfExportResult:
+    runner = session or VisioDesktopSession(
+        mode=mode,
+        vm_name=vm_name,
+        timeout=timeout,
+        visible=visible,
+        stage_local=stage_local,
+    )
+    return runner.export_pdf(file_path, output_pdf_path, options=options)
 
 
 def apply_skill_commands_desktop(
@@ -444,17 +507,25 @@ VIS_TAG_ELLIPTICAL_ARC_TO = 144
 VIS_TAG_CONNECTION_POINT = 153
 VIS_ROW_LAST = -2
 VIS_OPEN_RW = 32
+VIS_FIXED_FORMAT_PDF = 1
+VIS_DOC_EX_INTENT_SCREEN = 0
+VIS_DOC_EX_INTENT_PRINT = 1
+VIS_PRINT_ALL = 0
+VIS_PRINT_FROM_TO = 1
+VIS_PRINT_CURRENT_PAGE = 2
+VIS_PRINT_SELECTION = 3
+VIS_PRINT_CURRENT_VIEW = 4
+VIS_SELECT = 2
 
 
 def log_step(payload: dict, message: str) -> None:
     print(f"{datetime.now().isoformat()} {message}", file=sys.stderr, flush=True)
 
 
-def write_result(status: str, message: str = "", results: list | None = None) -> None:
-    print(
-        json.dumps({"status": status, "message": message, "results": results or []}, ensure_ascii=False),
-        flush=True,
-    )
+def write_result(status: str, message: str = "", results: list | None = None, **fields) -> None:
+    data = {"status": status, "message": message, "results": results or []}
+    data.update(fields)
+    print(json.dumps(data, ensure_ascii=False), flush=True)
 
 
 def terminate_process(pid) -> None:
@@ -627,6 +698,13 @@ def resolve_container_path(doc, path):
         current = shape
         idx += 2
     return current
+
+
+def parent_shape_path(path):
+    parts = [part for part in str(path).strip("/").split("/") if part]
+    if len(parts) >= 2 and parts[-2] == "shape":
+        return "/".join(parts[:-2])
+    raise ValueError(f"Invalid shape path: {path}")
 
 
 def ensure_user_row(owner, name):
@@ -890,6 +968,129 @@ def delete_shape(shape):
     window.Selection.Delete()
 
 
+def active_window(app):
+    window = app.ActiveWindow
+    if window is None:
+        app.Visible = True
+        window = app.ActiveWindow
+    return window
+
+
+def activate_page(page):
+    window = active_window(page.Application)
+    try:
+        window.Page = page
+        return window
+    except Exception:
+        pass
+    try:
+        page.Activate()
+    except Exception:
+        pass
+    return active_window(page.Application)
+
+
+def page_ref_from_shape_path(path):
+    parts = [part for part in str(path).strip("/").split("/") if part]
+    if len(parts) < 4 or parts[0] != "pages" or parts[2] != "shape":
+        raise ValueError(
+            "selection_shape_paths for saved-file PDF export must point to page shapes, "
+            f"got: {path!r}"
+        )
+    return parts[1]
+
+
+def prepare_saved_file_selection(doc, shape_paths):
+    if not isinstance(shape_paths, (list, tuple)) or not shape_paths:
+        raise ValueError("selection_shape_paths must contain at least one page shape path.")
+    normalized = [str(path) for path in shape_paths]
+    page_ref = page_ref_from_shape_path(normalized[0])
+    for path in normalized[1:]:
+        if page_ref_from_shape_path(path) != page_ref:
+            raise ValueError(
+                "selection_shape_paths must all belong to the same page when "
+                "exporting from source='saved_file'."
+            )
+    page = find_page(doc, page_ref)
+    window = activate_page(page)
+    window.DeselectAll()
+    for path in normalized:
+        window.Select(resolve_shape_path(doc, path), VIS_SELECT)
+    return window
+
+
+def export_pdf(doc, output_pdf_path, options):
+    if not output_pdf_path:
+        return
+    options = options or {}
+    intent = str(options.get("intent", "print")).strip().lower()
+    page_range = str(options.get("page_range", "all")).strip().lower()
+
+    if page_range == "current_page":
+        page_ref = options.get("page")
+        if page_ref:
+            activate_page(find_page(doc, page_ref))
+    elif page_range == "selection":
+        prepare_saved_file_selection(doc, options.get("selection_shape_paths") or [])
+
+    intent_code = VIS_DOC_EX_INTENT_PRINT if intent == "print" else VIS_DOC_EX_INTENT_SCREEN
+    range_code = {
+        "all": VIS_PRINT_ALL,
+        "from_to": VIS_PRINT_FROM_TO,
+        "current_page": VIS_PRINT_CURRENT_PAGE,
+        "selection": VIS_PRINT_SELECTION,
+        "current_view": VIS_PRINT_CURRENT_VIEW,
+    }[page_range]
+
+    doc.ExportAsFixedFormat(
+        VIS_FIXED_FORMAT_PDF,
+        output_pdf_path,
+        intent_code,
+        range_code,
+        int(options.get("from_page", 1)),
+        int(options.get("to_page", -1)),
+        bool(options.get("color_as_black", False)),
+        bool(options.get("include_background", True)),
+        bool(options.get("include_document_properties", True)),
+        bool(options.get("include_structure_tags", True)),
+        bool(options.get("pdfa", False)),
+        None,
+    )
+
+
+def ungroup_shape(shape):
+    for method_name in ("Ungroup",):
+        try:
+            getattr(shape, method_name)()
+            return
+        except Exception:
+            pass
+    app = shape.Application
+    window = active_window(app)
+    window.DeselectAll()
+    window.Select(shape, 2)
+    window.Selection.Ungroup()
+
+
+def group_shapes(doc, shape_paths):
+    if not isinstance(shape_paths, (list, tuple)) or len(shape_paths) < 2:
+        raise ValueError("group requires at least two 'shape_paths'.")
+    normalized = [str(path) for path in shape_paths]
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("group does not accept duplicate shape paths.")
+    common_parent = parent_shape_path(normalized[0])
+    for path in normalized[1:]:
+        if parent_shape_path(path) != common_parent:
+            raise ValueError("group requires all shapes to share the same direct parent container.")
+    shapes = [resolve_shape_path(doc, path) for path in normalized]
+    window = active_window(doc.Application)
+    window.DeselectAll()
+    for shape in shapes:
+        window.Select(shape, 2)
+    group_shape = window.Selection.Group()
+    return common_parent, group_shape
+
+
 def apply_annotation_command(doc, cmd):
     action = cmd.get("action")
     if action != "add_text_box":
@@ -932,6 +1133,29 @@ def apply_instance_command(doc, cmd):
         shape = resolve_shape_path(doc, cmd.get("shape_path"))
         delete_shape(shape)
         return {"action": "delete_instance", "status": "success", "shape_path": cmd.get("shape_path")}
+    if action == "ungroup":
+        shape = resolve_shape_path(doc, cmd.get("shape_path"))
+        moved_children = None
+        try:
+            moved_children = shape.Shapes.Count
+        except Exception:
+            pass
+        ungroup_shape(shape)
+        result = {"action": "ungroup", "status": "success", "shape_path": cmd.get("shape_path")}
+        if moved_children is not None:
+            result["moved_children"] = int(moved_children)
+        return result
+    if action == "group":
+        parent_path, shape = group_shapes(doc, cmd.get("shape_paths"))
+        return {
+            "action": "group",
+            "status": "success",
+            "parent_path": parent_path,
+            "shape_id": str(shape.ID),
+            "shape_path": f"{parent_path}/shape/{shape.ID}",
+            "shape_paths": [str(path) for path in cmd.get("shape_paths", [])],
+            "child_count": len(cmd.get("shape_paths", [])),
+        }
     raise ValueError(f"Unknown instance_manager action: {action}")
 
 
@@ -948,6 +1172,9 @@ def main() -> int:
     try:
         open_path = payload["file_path"]
         output_path = payload.get("output_path")
+        pdf_output_path = payload.get("pdf_output_path")
+        pdf_options = payload.get("pdf_options") or {}
+        command_groups = payload.get("command_groups", [])
 
         log_step(payload, "create_app_start")
         app = win32com.client.DispatchEx("Visio.Application")
@@ -958,7 +1185,7 @@ def main() -> int:
         doc = app.Documents.OpenEx(open_path, VIS_OPEN_RW)
         log_step(payload, "open_done")
 
-        for group in payload.get("command_groups", []):
+        for group in command_groups:
             executor = group.get("executor")
             for cmd in group.get("commands", []):
                 log_step(payload, f"command_start executor={executor} action={cmd.get('action')} target={group.get('target')}")
@@ -982,13 +1209,29 @@ def main() -> int:
             log_step(payload, f"save_as_start {output_path}")
             doc.SaveAs(output_path)
             log_step(payload, "save_as_done")
-        else:
+        elif command_groups:
             log_step(payload, "save_start")
             doc.Save()
             log_step(payload, "save_done")
 
+        if pdf_output_path:
+            log_step(payload, f"export_pdf_start {pdf_output_path}")
+            export_pdf(doc, pdf_output_path, pdf_options)
+            log_step(payload, "export_pdf_done")
+
         log_step(payload, "success")
-        write_result("ok", "", results)
+        if pdf_output_path:
+            write_result(
+                "ok",
+                "",
+                results,
+                action="export_pdf",
+                export_status="exported",
+                output_pdf_path=pdf_output_path,
+                source="saved_file",
+            )
+        else:
+            write_result("ok", "", results)
         return 0
     except Exception as exc:
         failed = True

@@ -534,13 +534,22 @@ class VisioBridge:
             with zipfile.ZipFile(self.file_path, "r") as zin:
                 with zipfile.ZipFile(temp_path, "w",
                                      compression=zipfile.ZIP_DEFLATED) as zout:
+                    existing_files: set[str] = set()
                     for item in zin.infolist():
+                        existing_files.add(item.filename)
                         if (item.filename in self.modified_files
                                 and item.filename in self.xml_cache):
                             data = tostring(self.xml_cache[item.filename])
                             zout.writestr(item, data)
                         else:
                             zout.writestr(item, zin.read(item.filename))
+                    for path in sorted(self.modified_files):
+                        if path in existing_files:
+                            continue
+                        tree = self.xml_cache.get(path)
+                        if tree is None:
+                            continue
+                        zout.writestr(path, tostring(tree))
             shutil.move(temp_path, target_path)
             self.modified_files.clear()
         except Exception as e:
